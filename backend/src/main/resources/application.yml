@@ -5,6 +5,29 @@ server:
 spring:
   application:
     name: mcp-catalog-server
+  ai:
+    mcp:
+      server:
+        # Slice 4: synchronous Streamable HTTP MCP server. Local-only by default.
+        enabled: true
+        name: mcp-catalog-server
+        version: 0.1.0
+        protocol: STREAMABLE
+        type: SYNC
+        # STDIO, resources, prompts and completions are Phase 3 concerns.
+        stdio: false
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+        # Tools are registered through Spring AI ToolCallback beans (see
+        # McpServerConfiguration). The @McpTool annotation scanner is unused here and
+        # logs a misleading empty-registry warning when enabled.
+        annotation-scanner:
+          enabled: false
+        streamable-http:
+          mcp-endpoint: /mcp
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -38,3 +61,22 @@ management:
       group:
         readiness:
           include: readinessState,db
+
+mcp:
+  server:
+    security:
+      # Request-origin protection for the local HTTP MCP transport.
+      # The "*" suffix is the SDK's port wildcard; only loopback hosts are allowed.
+      # A present Origin header must match this list. An absent Origin header
+      # (non-browser MCP clients) is allowed. Set to an empty list to reject every
+      # request that sends an Origin header. Override with
+      # MCP_SERVER_SECURITY_ALLOWED_ORIGINS (comma-separated).
+      allowed-origins:
+        - http://127.0.0.1:*
+        - http://localhost:*
+      # DNS-rebinding protection. A present Host header must match this list; an
+      # empty list disables Host validation. Override with
+      # MCP_SERVER_SECURITY_ALLOWED_HOSTS (comma-separated).
+      allowed-hosts:
+        - 127.0.0.1:*
+        - localhost:*

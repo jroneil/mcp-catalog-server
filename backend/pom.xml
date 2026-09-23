@@ -22,7 +22,7 @@
     </properties>
     <dependencyManagement>
         <dependencies>
-            <!-- Version decisions only; MCP runtime arrives in a later slice. -->
+            <!-- Version pins for the Spring AI and MCP SDK artifacts activated in Slice 4. -->
             <dependency>
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-bom</artifactId>
@@ -64,6 +64,15 @@
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
+        </dependency>
+        <!--
+          Slice 4: MCP is an adapter. This starter supplies the synchronous WebMVC
+          Streamable HTTP server transport and the Spring AI MCP tool registration
+          mechanism. Versions come from the imported spring-ai-bom / mcp-bom.
+        -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

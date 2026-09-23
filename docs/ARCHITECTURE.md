@@ -1,6 +1,6 @@
 # MCP Catalog Platform architecture
 
-Decision gate resolved 2026-09-23. Current scope: implementation plan v0.1, decision gate and Slices 1–3. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
+Decision gate resolved 2026-09-23. Current scope: implementation plan v0.1, decision gate and Slices 1–5. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
 
 ## Pinned decisions
 
@@ -8,8 +8,8 @@ Decision gate resolved 2026-09-23. Current scope: implementation plan v0.1, deci
 | --- | --- |
 | Java | Java 21, compiled with release 21 |
 | Spring Boot | 4.1.1 (parent, starters, plugins and managed dependency baseline) |
-| Spring AI | 2.0.1 BOM; MCP starter deferred to Slice 4 |
-| MCP Java SDK | 2.0.0, matching Spring AI 2.0.1's published dependency; MCP BOM pinned, no runtime MCP dependency yet |
+| Spring AI | 2.0.1 BOM; `spring-ai-starter-mcp-server-webmvc` activated in Slice 4 |
+| MCP Java SDK | 2.0.0, matching Spring AI 2.0.1's published dependency; `mcp-core` and `mcp-json-jackson3` now on the runtime classpath |
 | Build | Maven 3.9.16 in Docker; Maven 3.9+ and Java 21 for host builds |
 | PostgreSQL | 18.6, official `postgres:18.6-trixie` image |
 | Flyway | 12.4.0, Boot-aligned pin; core and PostgreSQL support added in Slice 2 |
@@ -20,8 +20,8 @@ Decision gate resolved 2026-09-23. Current scope: implementation plan v0.1, deci
 | HTTP | Container port 8080; host `127.0.0.1:8080` by default; host port configurable |
 | Package root | `com.example.mcpcatalog` |
 | Application version | 0.1.0 |
-| Future MCP endpoint | `http://127.0.0.1:8080/mcp` |
-| Future transport | Spring MVC, synchronous server, stateful Streamable HTTP (`protocol=STREAMABLE`, `type=SYNC`); no legacy SSE transport or STDIO |
+| MCP endpoint | `http://127.0.0.1:8080/mcp` |
+| MCP transport | Spring MVC, synchronous server, stateful Streamable HTTP (`protocol=STREAMABLE`, `type=SYNC`); no legacy SSE transport or STDIO |
 | Later real-host validation | Claude Code on the same host, using its HTTP MCP connection support |
 
 ## Compatibility evidence
@@ -52,11 +52,11 @@ Host execution defaults to a loopback listener. Compose explicitly sets the list
 
 MCP adapter -> CatalogService -> repository -> PostgreSQL. REST will reuse the same service in Phase 2. Blocking persistence is consistent with synchronous MCP and MVC.
 
-Flyway 12.4.0 is active in Slice 2 and owns all schema changes. MCP BOMs are only dependency management now; Slice 4 introduces the WebMVC starter and `/mcp`. Origin protection will be implemented and tested at that gate using an explicit allowlist/equivalent request filter, not assumed from transport defaults. Unsupported protection or transport incompatibility is a stop condition. No production authentication is implied.
+Flyway 12.4.0 is active in Slice 2 and owns all schema changes. Slice 4 activates the WebMVC Streamable HTTP starter and `/mcp`; the MCP adapter package and its request-origin protection are described below. The Slice 4 gate was reached with an explicit Origin/Host allowlist implemented through the SDK validator rather than assumed from transport defaults. No production authentication is implied.
 
 PostgreSQL integration tests must use Testcontainers and fail if Docker is unavailable; no silent skipping. The existing context test now also runs Flyway against its isolated PostgreSQL container before verifying health and JDBC connectivity. Later host validation needs a user-configured Claude Code installation/account and must keep the MCP server private.
 
-The PRD's complete Phase 1 startup acceptance (schema, seed, MCP tools) remains deferred to its designated slices. `backend/` follows the implementation plan and explicit task, replacing the PRD's illustrative `server-java/` layout. Slice 3 is implemented; Slice 4 has not been started.
+The PRD's complete Phase 1 startup acceptance (schema, seed, MCP tools) remains deferred to its designated slices; the endpoint is live with `search_catalog` registered and no detail tool yet. `backend/` follows the implementation plan and explicit task, replacing the PRD's illustrative `server-java/` layout. Slices 1–5 are implemented; Slice 6 has not been started.
 
 ## Slice 2 persistence decisions
 
@@ -108,4 +108,47 @@ Ordering is fixed `id ASC`: the unique primary key provides a total order withou
 
 `CatalogPage` contains immutable `items`, zero-based `page`, `pageSize`, `totalItems`, and `totalPages` (ceiling division; zero for zero matches). A valid page beyond the result set is empty and retains total metadata. `CatalogItemView` includes all nine catalog fields and has no persistence annotations. No separate domain engine is needed for these read-only behaviors.
 
-V1/V2, seed data, dependency pins, Dockerfile, Compose networking and health configuration remain unchanged. Service unit tests verify policy without Spring/SQL; PostgreSQL/Testcontainers service tests verify real query behavior and bounded pagination, including more than 100 matches using rolled-back test fixtures. Slice 4 remains unstarted.
+V1/V2, seed data, dependency pins, Dockerfile, Compose networking and health configuration remain unchanged. Service unit tests verify policy without Spring/SQL; PostgreSQL/Testcontainers service tests verify real query behavior and bounded pagination, including more than 100 matches using rolled-back test fixtures.
+
+## Slice 4 MCP adapter
+
+MCP is an adapter, not a second application. All MCP code lives under `com.example.mcpcatalog.mcp`. Later catalog tools live there too and call `CatalogService`; nothing under `mcp` may reach a repository directly, and no MCP-specific request/response type may appear in `catalog.application`. Slice 4 adds configuration only — no catalog business logic, and no tool.
+
+### Transport and identity
+
+`spring.ai.mcp.server` selects a synchronous Streamable HTTP server (no SSE, no STDIO, no stateless mode) served by Spring MVC. Identity is `mcp-catalog-server` version `0.1.0`, matching the application version. Only the tool capability is advertised; `resource`, `prompt` and `completion` are explicitly disabled because MCP resources, prompts and completions are Phase 3 scope, and the `@McpTool` annotation scanner is disabled because Slice 4 registers tools through Spring AI `ToolCallback` beans. The endpoint is `/mcp` (GET/POST/DELETE), matching the PRD and the decision gate.
+
+Tool registration uses Spring AI's existing `ToolCallback`/`ToolCallbackProvider` bean conversion to `SyncToolSpecification`; no custom registrar is introduced. Slice 4 proved the mechanism with a test-scoped `ToolCallback` bean; Slice 5 registers the first production tool through the same conversion (see below). Catalog tool contracts are versioned APIs: names, argument schemas and result shapes change only with explicit review and documentation.
+
+### Slice 5 tool: `search_catalog`
+
+`mcp.tools.SearchCatalogTool` is the adapter. It is constructed with `CatalogService` only, passes every argument through unchanged (`null` for omitted inputs), and maps `CatalogPage` to the MCP-facing `SearchCatalogResult`/`SearchCatalogItem`. It owns no defaults, bounds, filtering, ordering, pagination arithmetic, SQL or repository access, so Slice 3's validation and defaulting stay authoritative. `InvalidCatalogCriteriaException` propagates untouched; the framework turns any thrown exception into an MCP tool error (`isError: true`) whose text is the exception message.
+
+The tool name, description and input schema are generated by Spring AI from the annotated adapter method and are treated as a versioned contract:
+
+- name: `search_catalog`
+- inputs, all optional: `type` (string), `active` (boolean), `maxPrice` (number), `text` (string), `page` (integer), `pageSize` (integer)
+- `required: []`, `additionalProperties: false`
+
+**Bounds and enums are deliberately absent from the schema.** The MCP SDK validates incoming arguments against the schema before the handler runs (`ToolInputValidator`, `validateToolInputs=true` by default), so encoding `enum`/`minimum`/`maximum`/`maxLength` would reject out-of-range values with a generic schema error and would relocate the rule out of `CatalogService`. Instead the bounds appear in the parameter descriptions so a model can avoid them, while `CatalogService` remains the only enforcing authority. Adapters added later must follow the same rule.
+
+**Result delivery is framework-determined.** Spring AI 2.0.1's `McpToolUtils.toSyncToolSpecification` builds the MCP `Tool` without `outputSchema` and returns only text content, with no `structuredContent`. The result contract is therefore a single JSON document in `content[0].text`: `{items:[{id,sku,name,type,description,price,active,createdAt,updatedAt}],page,pageSize,totalItems,totalPages}`, with timestamps as ISO-8601 UTC instants and `price` serialized with two decimals. Errors use the same text block with `isError: true`. Exposing `outputSchema`/`structuredContent` would require abandoning the accepted `ToolCallback` conversion for a raw `SyncToolSpecification` bean and is out of scope for Phase 1.
+
+One adapter-level normalization exists: MCP `tools/call` makes `arguments` optional, but `McpToolUtils` forwards it verbatim and Spring AI's `MethodToolCallback` fails with `toolArguments must not be null` when it is absent. `mcp.tools.OptionalArgumentsToolCallback` maps an absent/blank/JSON-`null` payload to `{}` and forwards everything else unchanged. Tool definition, schema, argument binding and error handling remain the framework's.
+
+`McpToolConfiguration` registers the annotated adapter object as a `ToolCallbackProvider`. Slice 6 can add `get_catalog_item` to the same adapter object and it will be registered by the same conversion. Slice 6 remains unstarted.
+
+### Origin and Host request protection
+
+The MCP SDK provides `DefaultServerTransportSecurityValidator`, but Spring AI 2.0.1's auto-configuration builds the transport provider without one, leaving the SDK builder default of `ServerTransportSecurityValidator.NOOP`; the starter exposes no allowlist property. `mcp.config.McpServerConfiguration` therefore supplies the `WebMvcStreamableServerTransportProvider` bean itself, mirroring the framework construction (same `mcpServerJsonMapper`, endpoint, keep-alive and delete settings) plus the validator. The auto-configuration backs off on the same bean type, and its router-function bean still registers `/mcp` against the supplied provider. This implementation is the concrete "explicit allowlist" the decision gate required; it is not inherited from transport defaults.
+
+Validation runs on GET, POST and DELETE before Accept-header or JSON-RPC handling:
+
+- absent or blank `Origin` is allowed (non-browser MCP clients send no `Origin`);
+- a present `Origin` must match `mcp.server.security.allowed-origins` exactly or by the SDK's `scheme://host:*` port wildcard, otherwise HTTP 403 `Invalid Origin header`;
+- a present `Host` must match `mcp.server.security.allowed-hosts`, otherwise HTTP 421 `Invalid Host header`; an empty host list disables that check;
+- an empty origin list rejects every request that sends an `Origin` (deny-by-default).
+
+Defaults are loopback-only (`http://127.0.0.1:*`, `http://localhost:*`, and the matching hosts) and are overridable with `MCP_SERVER_SECURITY_ALLOWED_ORIGINS` / `MCP_SERVER_SECURITY_ALLOWED_HOSTS`. This does not change exposure: Compose still publishes only `127.0.0.1:8080`, PostgreSQL remains unpublished, and host execution still defaults to `SERVER_ADDRESS=127.0.0.1`. Browser clients that send a non-loopback origin — for example an MCP Inspector web UI on its own port — need an explicit allowlist entry; confirming that is Slice 8 work.
+
+Because the provider bean is defined by the application rather than the starter, a Spring AI upgrade must re-check the provider builder arguments and the starter's back-off conditions. That is the accepted cost of pinning to Spring AI 2.0.1 / MCP SDK 2.0.0.

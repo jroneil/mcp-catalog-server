@@ -1,6 +1,6 @@
 # MCP Catalog Platform
 
-Slices 1–3: Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence and Actuator health. Catalog search and detail are available through the application service; MCP and REST endpoints are not implemented yet. License: TBD before public distribution.
+Slices 1–5: Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence, Actuator health, and a Streamable HTTP MCP server exposing the `search_catalog` tool with request-origin protection. Catalog search and detail are available through the application service; `get_catalog_item` and REST endpoints are not implemented yet. License: TBD before public distribution.
 
 ## Start locally
 
@@ -31,11 +31,83 @@ mvn -f backend/pom.xml --batch-mode --no-transfer-progress clean verify
 docker build -t mcp-catalog-server:0.1.0 backend
 ```
 
-The context test provisions its own PostgreSQL 18.6 container and verifies JDBC plus HTTP health/readiness; it needs no `.env` and never uses H2. Docker image builds compile/package but skip test execution; run the Maven gate separately. Flyway creates and seeds the catalog table. Additional PostgreSQL tests verify migrations, repository mappings, database constraints and failure of application startup on an invalid migration.
+The context test provisions its own PostgreSQL 18.6 container and verifies JDBC plus HTTP health/readiness; it needs no `.env` and never uses H2. Docker image builds compile/package but skip test execution; run the Maven gate separately. Flyway creates and seeds the catalog table. Additional PostgreSQL tests verify migrations, repository mappings, database constraints and failure of application startup on an invalid migration. The Slice 4 suites start the real MCP server on a random port and verify server identity, advertised capabilities, the `/mcp` route, Origin/Host rejection and tool discovery. The Slice 5 suites verify the `search_catalog` contract, mapping and validation, and drive the production tool with a real MCP client against the seeded catalog. The full gate currently runs 112 tests with no failures.
 
 For host execution, supply `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` for a reachable PostgreSQL instance, then run `mvn -f backend/pom.xml spring-boot:run`. Host execution binds `127.0.0.1:8080` by default; `.env` is read by Compose, not automatically by Spring Boot. Compose deliberately does not publish PostgreSQL.
 
-See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.1.md). Intended future MCP path: `/mcp`, synchronous Streamable HTTP; it remains absent. Slice 4 has not been started.
+See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.1.md). The MCP endpoint is `/mcp` (synchronous Streamable HTTP) and exposes `search_catalog`; see the MCP section below. Slice 6 has not been started.
+
+## MCP server and tools (Slices 4–5)
+
+The backend runs a Spring AI 2.0.1 / MCP Java SDK 2.0.0 synchronous Streamable HTTP server on the same loopback port:
+
+```text
+http://127.0.0.1:8080/mcp      (HTTP GET/POST/DELETE)
+```
+
+Identity is `mcp-catalog-server` version `0.1.0`. Only the tool capability is advertised; resources, prompts, completions and the STDIO transport are deliberately absent. Tool registration uses Spring AI `ToolCallback`/`ToolCallbackProvider` beans. One tool is registered:
+
+### `search_catalog`
+
+Returns one page of catalog items matching optional filters, backed by `CatalogService` and PostgreSQL. All inputs are optional and combine as AND filters:
+
+| Input | Type | Meaning |
+| --- | --- | --- |
+| `type` | string | `PRODUCT` or `SERVICE` (exact, case-sensitive) |
+| `active` | boolean | `true` active only, `false` inactive only |
+| `maxPrice` | number | inclusive ceiling, 0–9999999999.99, ≤ 2 decimals |
+| `text` | string | case-insensitive literal substring of SKU, name or description, ≤ 200 chars |
+| `page` | integer | zero-based, default 0, 0–10000 |
+| `pageSize` | integer | default 20, 1–100 |
+
+The result is a JSON document in the tool result's text content:
+
+```json
+{"items":[{"id":16,"sku":"SVC-104","name":"Network Health Assessment","type":"SERVICE",
+"description":"Review office network configuration and provide a prioritized findings report.",
+"price":199.00,"active":true,"createdAt":"2026-01-15T09:00:00Z","updatedAt":"2026-01-15T09:00:00Z"}],
+"page":0,"pageSize":20,"totalItems":9,"totalPages":1}
+```
+
+Invalid input returns an MCP tool error (`isError: true`) carrying the `CatalogService` message, for example `Page size must be between 1 and 100`. Bounds are deliberately not duplicated in the JSON schema, so `CatalogService` remains the single validating authority. `get_catalog_item` arrives in Slice 6.
+
+The transport enforces request-origin protection before any JSON-RPC handling:
+
+| Request | Result |
+| --- | --- |
+| No `Origin` header (non-browser MCP clients) | allowed |
+| `Origin` on a loopback host, any port | allowed |
+| `Origin` not in the allowlist | HTTP 403 `Invalid Origin header` |
+| `Host` not in the allowlist | HTTP 421 `Invalid Host header` |
+
+Defaults are loopback-only: `mcp.server.security.allowed-origins` = `http://127.0.0.1:*`, `http://localhost:*` and `mcp.server.security.allowed-hosts` = `127.0.0.1:*`, `localhost:*`. Override with `MCP_SERVER_SECURITY_ALLOWED_ORIGINS` / `MCP_SERVER_SECURITY_ALLOWED_HOSTS` (comma-separated). A browser MCP client that sends its own origin must be added explicitly. This protection does not change host exposure: the port is still published only on `127.0.0.1` and PostgreSQL stays unpublished.
+
+Verify the live endpoint after `docker compose up --build --wait`:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/mcp          # 400: route present
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8080/mcp \
+  -H 'Origin: http://evil.example' -H 'Accept: application/json, text/event-stream' \
+  -H 'Content-Type: application/json' -d 'not-json'                          # 403: origin rejected
+curl -s -D - -X POST http://127.0.0.1:8080/mcp -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' -H 'Origin: http://127.0.0.1:8080' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0.1.0"}}}'
+```
+
+The `initialize` response returns `serverInfo` and a `Mcp-Session-Id`. Reuse that header to list tools and to call the tool:
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/mcp -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' -H 'Origin: http://127.0.0.1:8080' \
+  -H "Mcp-Session-Id: <session>" -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+
+curl -s -X POST http://127.0.0.1:8080/mcp -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' -H 'Origin: http://127.0.0.1:8080' \
+  -H "Mcp-Session-Id: <session>" \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search_catalog","arguments":{"type":"SERVICE","active":true,"maxPrice":200,"page":0,"pageSize":20}}}'
+```
+
+That call returns the six active services priced at or below 200 (`SVC-101`, `SVC-102`, `SVC-103`, `SVC-104`, `SVC-107`, `SVC-108`). MCP Inspector setup and the real-host validation are Slices 8 and 9. See [Slice 4 validation](docs/SLICE_4_VALIDATION.md) and [Slice 5 validation](docs/SLICE_5_VALIDATION.md) for exact evidence.
 
 ## Catalog database (Slice 2)
 
