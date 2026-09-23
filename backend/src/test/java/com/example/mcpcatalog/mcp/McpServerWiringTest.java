@@ -77,10 +77,10 @@ class McpServerWiringTest {
 	}
 
 	@Test
-	void onlyTheAcceptedCatalogToolIsRegisteredBeforeSliceSix() {
+	void exactlyTheAcceptedCatalogToolsAreRegistered() {
 		assertThat(mcpSyncServer.listTools()).extracting(McpSchema.Tool::name)
-			.as("search_catalog arrives in Slice 5; get_catalog_item in Slice 6")
-			.containsExactly("search_catalog");
+			.as("search_catalog (Slice 5) and get_catalog_item (Slice 6) are the only production tools")
+			.containsExactlyInAnyOrder("search_catalog", "get_catalog_item");
 	}
 
 	@Test

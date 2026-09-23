@@ -54,7 +54,7 @@ class McpToolDiscoveryTest {
 	@Test
 	void registryInspectsTheRegisteredToolSpecification() {
 		assertThat(mcpSyncServer.listTools()).extracting(McpSchema.Tool::name)
-			.containsExactlyInAnyOrder("slice4_probe", "search_catalog");
+			.containsExactlyInAnyOrder("slice4_probe", "search_catalog", "get_catalog_item");
 	}
 
 	@Test
@@ -74,7 +74,7 @@ class McpToolDiscoveryTest {
 
 			McpSchema.ListToolsResult discovered = client.listTools();
 			assertThat(discovered.tools()).extracting(McpSchema.Tool::name)
-				.containsExactlyInAnyOrder("slice4_probe", "search_catalog");
+				.containsExactlyInAnyOrder("slice4_probe", "search_catalog", "get_catalog_item");
 
 			McpSchema.Tool tool = discovered.tools()
 				.stream()

@@ -2,6 +2,7 @@ package com.example.mcpcatalog.mcp.config;
 
 import java.util.stream.Stream;
 
+import com.example.mcpcatalog.mcp.tools.GetCatalogItemTool;
 import com.example.mcpcatalog.mcp.tools.OptionalArgumentsToolCallback;
 import com.example.mcpcatalog.mcp.tools.SearchCatalogTool;
 import org.springframework.ai.support.ToolCallbacks;
@@ -18,14 +19,18 @@ import org.springframework.context.annotation.Configuration;
  *
  * <p>Tool name, description, input schema and argument binding stay
  * framework-generated from the annotated adapter methods, so this class only wires
- * beans and contains no catalog behavior.
+ * beans and contains no catalog behavior. Each adapter object contributes its
+ * annotated methods, which is how {@code search_catalog} and {@code get_catalog_item}
+ * are registered together.
  */
 @Configuration(proxyBeanMethods = false)
 public class McpToolConfiguration {
 
 	@Bean
-	ToolCallbackProvider catalogToolCallbackProvider(SearchCatalogTool searchCatalogTool) {
-		ToolCallback[] callbacks = Stream.of(ToolCallbacks.from(searchCatalogTool))
+	ToolCallbackProvider catalogToolCallbackProvider(SearchCatalogTool searchCatalogTool,
+			GetCatalogItemTool getCatalogItemTool) {
+		ToolCallback[] callbacks = Stream.of(searchCatalogTool, getCatalogItemTool)
+			.flatMap(adapter -> Stream.of(ToolCallbacks.from(adapter)))
 			.map(OptionalArgumentsToolCallback::new)
 			.toArray(ToolCallback[]::new);
 		return ToolCallbackProvider.from(callbacks);

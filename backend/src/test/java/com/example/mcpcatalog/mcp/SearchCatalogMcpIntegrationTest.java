@@ -72,8 +72,14 @@ class SearchCatalogMcpIntegrationTest {
 	void searchCatalogIsDiscoverableWithTheDocumentedSchema() {
 		McpSchema.ListToolsResult tools = this.client.listTools();
 
-		assertThat(tools.tools()).extracting(McpSchema.Tool::name).containsExactly(TOOL);
-		McpSchema.Tool tool = tools.tools().get(0);
+		assertThat(tools.tools()).extracting(McpSchema.Tool::name)
+			.as("search_catalog remains discoverable alongside get_catalog_item")
+			.contains(TOOL);
+		McpSchema.Tool tool = tools.tools()
+			.stream()
+			.filter(candidate -> candidate.name().equals(TOOL))
+			.findFirst()
+			.orElseThrow();
 		assertThat(tool.description()).contains("catalog", "PRODUCT", "SERVICE");
 
 		Map<String, Object> schema = tool.inputSchema();
