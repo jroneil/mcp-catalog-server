@@ -1,6 +1,6 @@
 # MCP Catalog Platform architecture
 
-Decision gate resolved 2026-09-23. Current scope: implementation plan v0.1, decision gate and Slices 1–8. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
+Decision gate resolved 2026-09-23. Current scope: implementation plan v0.1, decision gate and Slices 1–10 — Phase 1 is complete and Phase 2 has not been started. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
 
 ## Pinned decisions
 
@@ -22,7 +22,7 @@ Decision gate resolved 2026-09-23. Current scope: implementation plan v0.1, deci
 | Application version | 0.1.0 |
 | MCP endpoint | `http://127.0.0.1:8080/mcp` |
 | MCP transport | Spring MVC, synchronous server, stateful Streamable HTTP (`protocol=STREAMABLE`, `type=SYNC`); no legacy SSE transport or STDIO |
-| Later real-host validation | Claude Code on the same host, using its HTTP MCP connection support |
+| Real-host validation | Completed in Slice 9 with opencode 1.18.23 + local Ollama `qwen3-coder-next:latest` (all four natural-language scenarios grounded). Claude Code 2.1.209 also connects over HTTP but is unauthenticated in this environment |
 
 ## Compatibility evidence
 
@@ -33,7 +33,7 @@ Verified against published releases, not tutorial versions:
 - [Published Spring AI MCP 2.0.1 POM](https://repo.maven.apache.org/maven2/org/springframework/ai/spring-ai-mcp/2.0.1/spring-ai-mcp-2.0.1.pom): SDK 2.0.0. The reference's SDK 2.0.1 example is not imposed over the framework's tested dependency.
 - [Boot 4.1.1 dependency BOM](https://repo.maven.apache.org/maven2/org/springframework/boot/spring-boot-dependencies/4.1.1/spring-boot-dependencies-4.1.1.pom): Flyway, JDBC and Testcontainers versions above.
 - [Spring AI MCP starter](https://docs.spring.io/spring-ai/reference/api/mcp/mcp-server-boot-starter-docs.html): WebMVC Streamable HTTP and synchronous operation supported.
-- [Claude Code HTTP MCP configuration](https://code.claude.com/docs/en/mcp): later use `claude mcp add --transport http catalog http://127.0.0.1:8080/mcp`. This is a future validation choice, not a completed interoperability test or backend AI-provider integration.
+- [Claude Code HTTP MCP configuration](https://code.claude.com/docs/en/mcp): `claude mcp add --transport http catalog http://127.0.0.1:8080/mcp` is the supported registration. Slice 9 verified that Claude Code 2.1.209 connects to `/mcp` and completes the MCP `initialize` handshake (protocol 2025-11-25) with the default security posture; the host's natural-language tool use could not be exercised because that installation has no credentials. This is host/MCP integration only — not backend AI-provider integration.
 - Official image catalogs: [Java](https://github.com/docker-library/official-images/blob/master/library/eclipse-temurin), [Maven](https://github.com/docker-library/official-images/blob/master/library/maven), [PostgreSQL](https://github.com/docker-library/official-images/blob/master/library/postgres).
 
 Exact release tags are intentional; image tags can receive upstream OS rebuilds. Dependency/image upgrades require review. No milestone, snapshot, or latest tags are used.
@@ -54,9 +54,9 @@ MCP adapter -> CatalogService -> repository -> PostgreSQL. REST will reuse the s
 
 Flyway 12.4.0 is active in Slice 2 and owns all schema changes. Slice 4 activates the WebMVC Streamable HTTP starter and `/mcp`; the MCP adapter package and its request-origin protection are described below. The Slice 4 gate was reached with an explicit Origin/Host allowlist implemented through the SDK validator rather than assumed from transport defaults. No production authentication is implied.
 
-PostgreSQL integration tests must use Testcontainers and fail if Docker is unavailable; no silent skipping. The existing context test now also runs Flyway against its isolated PostgreSQL container before verifying health and JDBC connectivity. Later host validation needs a user-configured Claude Code installation/account and must keep the MCP server private.
+PostgreSQL integration tests must use Testcontainers and fail if Docker is unavailable; no silent skipping. The existing context test now also runs Flyway against its isolated PostgreSQL container before verifying health and JDBC connectivity. The MCP server must remain private. Real-host validation was completed in Slice 9 with a local Ollama-backed host (opencode 1.18.23); a Claude Code installation would additionally need its own account credentials.
 
-The PRD's complete Phase 1 startup acceptance (schema, seed, MCP tools) is now met by the two registered catalog tools, Slice 7 proved the whole path end to end, and Slice 8 validated the running server with MCP Inspector; real-host validation remains in Slice 9. `backend/` follows the implementation plan and explicit task, replacing the PRD's illustrative `server-java/` layout. Slices 1–8 are implemented; Slice 9 has not been started.
+The PRD's complete Phase 1 startup acceptance (schema, seed, MCP tools) is now met by the two registered catalog tools, Slice 7 proved the whole path end to end, Slice 8 validated the running server with MCP Inspector, and Slice 9 completed real-host validation with a local Ollama-backed host. `backend/` follows the implementation plan and explicit task, replacing the PRD's illustrative `server-java/` layout. Slices 1–10 are implemented and Phase 1 is complete; Phase 2 has not been started.
 
 ## Slice 2 persistence decisions
 
@@ -112,7 +112,7 @@ V1/V2, seed data, dependency pins, Dockerfile, Compose networking and health con
 
 ## Slice 4 MCP adapter
 
-MCP is an adapter, not a second application. All MCP code lives under `com.example.mcpcatalog.mcp`. Later catalog tools live there too and call `CatalogService`; nothing under `mcp` may reach a repository directly, and no MCP-specific request/response type may appear in `catalog.application`. Slice 4 adds configuration only — no catalog business logic, and no tool.
+MCP is an adapter, not a second application. All MCP code lives under `com.example.mcpcatalog.mcp`. Later catalog tools live there too and call `CatalogService`; nothing under `mcp` may reach a repository directly, and no MCP-specific request/response type may appear in `catalog.application`. Slice 4 added configuration only — no catalog business logic, and no tool.
 
 ### Transport and identity
 
@@ -152,7 +152,7 @@ Spring AI converts any exception thrown by a tool callback into an MCP tool erro
 
 `mcp.tools.SanitizingToolCallback` is the outermost callback decorator. It rethrows `InvalidCatalogCriteriaException` and `CatalogItemNotFoundException` unchanged — found anywhere in the cause chain, so framework wrapping does not hide them — and replaces every other `RuntimeException` with `SanitizedToolFailureException`, whose fixed message is `The tool failed due to an internal server error and returned no data.` The original failure is logged server-side at ERROR (tool name plus throwable; never the tool arguments, which may contain query data) and retained only as the cause. The decorator resolves the tool name defensively so that error reporting cannot itself fail.
 
-This is an additional `ToolCallback` in the already-accepted chain, not a new registration mechanism: tool name, description, input schema, argument binding, result conversion and the `ToolCallbackProvider` conversion are untouched, and no application exception or documented tool error changed. Schema-validation failures for malformed arguments are raised by the MCP SDK before the handler runs and therefore keep the SDK's own (non-sensitive) wording. Slice 8 remains unstarted.
+This is an additional `ToolCallback` in the already-accepted chain, not a new registration mechanism: tool name, description, input schema, argument binding, result conversion and the `ToolCallbackProvider` conversion are untouched, and no application exception or documented tool error changed. Schema-validation failures for malformed arguments are raised by the MCP SDK before the handler runs and therefore keep the SDK's own (non-sensitive) wording.
 
 ### Origin and Host request protection
 

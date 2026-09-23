@@ -1,6 +1,6 @@
 # MCP Catalog Platform
 
-Slices 1–8: Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence, Actuator health, and a Streamable HTTP MCP server exposing the `search_catalog` and `get_catalog_item` tools with request-origin protection. Catalog search and detail are available through the application service and through MCP; REST endpoints are not implemented yet. License: TBD before public distribution.
+Slices 1–10 (Phase 1 complete): Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence, Actuator health, and a Streamable HTTP MCP server exposing the `search_catalog` and `get_catalog_item` tools with request-origin protection. Catalog search and detail are available through the application service and through MCP; REST endpoints are not implemented yet. Phase 2 (Angular, REST, AI providers) has not been started. License: TBD before public distribution.
 
 ## Start locally
 
@@ -35,9 +35,9 @@ The context test provisions its own PostgreSQL 18.6 container and verifies JDBC 
 
 For host execution, supply `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` for a reachable PostgreSQL instance, then run `mvn -f backend/pom.xml spring-boot:run`. Host execution binds `127.0.0.1:8080` by default; `.env` is read by Compose, not automatically by Spring Boot. Compose deliberately does not publish PostgreSQL.
 
-See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.1.md). The MCP endpoint is `/mcp` (synchronous Streamable HTTP) and exposes `search_catalog` and `get_catalog_item`; see the MCP section below. Slice 8 has not been started.
+See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.1.md). The MCP endpoint is `/mcp` (synchronous Streamable HTTP) and exposes `search_catalog` and `get_catalog_item`; see the MCP section below. Slice 10 (the Phase 1 acceptance audit) is complete — see [Slice 10 validation](docs/SLICE_10_VALIDATION.md); Phase 2 has not been started.
 
-## MCP server and tools (Slices 4–7)
+## MCP server and tools (Slices 4–9)
 
 The backend runs a Spring AI 2.0.1 / MCP Java SDK 2.0.0 synchronous Streamable HTTP server on the same loopback port:
 
@@ -151,6 +151,47 @@ npx -y @modelcontextprotocol/inspector@2.7.0 --cli \
 ```
 
 The Inspector web UI talks to a local Inspector proxy that makes the MCP HTTP requests, so it sends no `Origin` header; if a client does send `Origin: http://localhost:6274` it is already accepted by the default `http://localhost:*` entry. Tool errors surface in the UI as `Tool Error` with the message from `CatalogService`. See [Slice 8 validation](docs/SLICE_8_VALIDATION.md).
+
+### Connecting a real MCP host
+
+```bash
+claude mcp add --transport http catalog http://127.0.0.1:8080/mcp
+claude mcp list
+# Checking MCP server health…
+# catalog: http://127.0.0.1:8080/mcp (HTTP) - ✔ Connected
+```
+
+`claude mcp add` defaults to local scope, so the entry is written to `~/.claude.json`
+keyed by the current directory and the repository stays untouched (use `-s user` for all
+projects, or `-s project` to commit a `.mcp.json`). No Origin/Host allowlist change is
+needed: Claude Code is a non-browser client that sends no `Origin`, and its Host is
+loopback. Remove it with `claude mcp remove catalog -s local`. Running natural-language
+prompts requires the host to be authenticated (`/login` or `ANTHROPIC_API_KEY`); that
+installation has no credentials here, so its prompts were not validated.
+
+Slice 9 completed the real-host gate with **opencode 1.18.23 driving a local Ollama
+model**. In a scratch directory (not this repository), create `opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": { "catalog": { "type": "remote", "url": "http://127.0.0.1:8080/mcp", "enabled": true } }
+}
+```
+
+then verify and use the tools with a local model:
+
+```bash
+opencode mcp list                      # ● ✓ catalog connected
+opencode run 'Find all active service items under $200.' -m ollama/qwen3-coder-next:latest
+opencode run 'Show me catalog item 16.' -m ollama/qwen3-coder-next:latest
+```
+
+The host exposes the tools as `catalog_search_catalog` and `catalog_get_catalog_item`
+and answers from the returned data only. `qwen3-coder-next:latest` is the installed
+Ollama model whose tool calls Ollama parses correctly; `qwen2.5-coder:14b` returns the
+right arguments as plain text instead. See [Slice 9 validation](docs/SLICE_9_VALIDATION.md)
+for the full evidence and caveats.
 
 ## Catalog database (Slice 2)
 
