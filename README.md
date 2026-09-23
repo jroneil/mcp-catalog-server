@@ -1,6 +1,6 @@
 # MCP Catalog Platform
 
-Slices 1–6: Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence, Actuator health, and a Streamable HTTP MCP server exposing the `search_catalog` and `get_catalog_item` tools with request-origin protection. Catalog search and detail are available through the application service and through MCP; REST endpoints are not implemented yet. License: TBD before public distribution.
+Slices 1–8: Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence, Actuator health, and a Streamable HTTP MCP server exposing the `search_catalog` and `get_catalog_item` tools with request-origin protection. Catalog search and detail are available through the application service and through MCP; REST endpoints are not implemented yet. License: TBD before public distribution.
 
 ## Start locally
 
@@ -31,13 +31,13 @@ mvn -f backend/pom.xml --batch-mode --no-transfer-progress clean verify
 docker build -t mcp-catalog-server:0.1.0 backend
 ```
 
-The context test provisions its own PostgreSQL 18.6 container and verifies JDBC plus HTTP health/readiness; it needs no `.env` and never uses H2. Docker image builds compile/package but skip test execution; run the Maven gate separately. Flyway creates and seeds the catalog table. Additional PostgreSQL tests verify migrations, repository mappings, database constraints and failure of application startup on an invalid migration. The Slice 4 suites start the real MCP server on a random port and verify server identity, advertised capabilities, the `/mcp` route, Origin/Host rejection and tool discovery. The Slice 5 and 6 suites verify both tool contracts, mapping, validation and error behavior, and drive the production tools with a real MCP client against the seeded catalog. The full gate currently runs 136 tests with no failures.
+The context test provisions its own PostgreSQL 18.6 container and verifies JDBC plus HTTP health/readiness; it needs no `.env` and never uses H2. Docker image builds compile/package but skip test execution; run the Maven gate separately. Flyway creates and seeds the catalog table. Additional PostgreSQL tests verify migrations, repository mappings, database constraints and failure of application startup on an invalid migration. The Slice 4 suites start the real MCP server on a random port and verify server identity, advertised capabilities, the `/mcp` route, Origin/Host rejection and tool discovery. The Slice 5 and 6 suites verify both tool contracts, mapping, validation and error behavior, and drive the production tools with a real MCP client against the seeded catalog. Slice 7 adds an end-to-end acceptance suite over the whole MCP path, architecture-boundary checks and failure-path sanitization coverage. The full gate currently runs 184 tests with no failures.
 
 For host execution, supply `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` for a reachable PostgreSQL instance, then run `mvn -f backend/pom.xml spring-boot:run`. Host execution binds `127.0.0.1:8080` by default; `.env` is read by Compose, not automatically by Spring Boot. Compose deliberately does not publish PostgreSQL.
 
-See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.1.md). The MCP endpoint is `/mcp` (synchronous Streamable HTTP) and exposes `search_catalog` and `get_catalog_item`; see the MCP section below. Slice 7 has not been started.
+See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.1.md). The MCP endpoint is `/mcp` (synchronous Streamable HTTP) and exposes `search_catalog` and `get_catalog_item`; see the MCP section below. Slice 8 has not been started.
 
-## MCP server and tools (Slices 4–6)
+## MCP server and tools (Slices 4–7)
 
 The backend runs a Spring AI 2.0.1 / MCP Java SDK 2.0.0 synchronous Streamable HTTP server on the same loopback port:
 
@@ -69,7 +69,7 @@ The result is a JSON document in the tool result's text content:
 "page":0,"pageSize":20,"totalItems":9,"totalPages":1}
 ```
 
-Invalid input returns an MCP tool error (`isError: true`) carrying the `CatalogService` message, for example `Page size must be between 1 and 100`. Bounds are deliberately not duplicated in the JSON schema, so `CatalogService` remains the single validating authority.
+Invalid input returns an MCP tool error (`isError: true`) carrying the `CatalogService` message, for example `Page size must be between 1 and 100`. Bounds are deliberately not duplicated in the JSON schema, so `CatalogService` remains the single validating authority. An unexpected internal failure is sanitized at the MCP boundary and returns only `The tool failed due to an internal server error and returned no data.` — never SQL text, a connection string, a file path, a credential or a stack trace.
 
 ### `get_catalog_item`
 
@@ -87,7 +87,7 @@ The result is the item object itself, in the same text content, with the same fi
 "price":199.00,"active":true,"createdAt":"2026-01-15T09:00:00Z","updatedAt":"2026-01-15T09:00:00Z"}
 ```
 
-Errors are explicit and never fabricate an item: an unknown identifier returns `isError: true` with `Catalog item not found: 99999`, a non-positive identifier returns `Catalog item ID must be positive`, and a missing or non-integer `id` is rejected by schema validation. Inactive rows are retrievable by identifier, exactly as `CatalogService.getItem` behaves.
+Errors are explicit and never fabricate an item: an unknown identifier returns `isError: true` with `Catalog item not found: 99999`, a non-positive identifier returns `Catalog item ID must be positive`, and a missing or non-integer `id` is rejected by schema validation. Inactive rows are retrievable by identifier, exactly as `CatalogService.getItem` behaves. Unexpected internal failures use the same sanitized message as `search_catalog`.
 
 The transport enforces request-origin protection before any JSON-RPC handling:
 
@@ -130,7 +130,27 @@ curl -s -X POST http://127.0.0.1:8080/mcp -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_catalog_item","arguments":{"id":16}}}'
 ```
 
-`tools/list` returns exactly two tools. The search call returns the six active services priced at or below 200 (`SVC-101`, `SVC-102`, `SVC-103`, `SVC-104`, `SVC-107`, `SVC-108`); the detail call returns the `SVC-104` row. MCP Inspector setup and the real-host validation are Slices 8 and 9. See [Slice 4 validation](docs/SLICE_4_VALIDATION.md), [Slice 5 validation](docs/SLICE_5_VALIDATION.md) and [Slice 6 validation](docs/SLICE_6_VALIDATION.md) for exact evidence.
+`tools/list` returns exactly two tools. The search call returns the six active services priced at or below 200 (`SVC-101`, `SVC-102`, `SVC-103`, `SVC-104`, `SVC-107`, `SVC-108`); the detail call returns the `SVC-104` row. A real host validation is still outstanding (Slice 9). See [Slice 4 validation](docs/SLICE_4_VALIDATION.md), [Slice 5 validation](docs/SLICE_5_VALIDATION.md), [Slice 6 validation](docs/SLICE_6_VALIDATION.md), [Slice 7 validation](docs/SLICE_7_VALIDATION.md) and [Slice 8 validation](docs/SLICE_8_VALIDATION.md) for exact evidence.
+
+### Connecting MCP Inspector
+
+MCP Inspector 2.7.0 connects to the loopback server with no allowlist change.
+
+```bash
+# Web UI (browser): enter http://127.0.0.1:8080/mcp as an HTTP / Streamable HTTP server
+npx -y @modelcontextprotocol/inspector@2.7.0 --web \
+  --transport http --server-url http://127.0.0.1:8080/mcp
+
+# Headless CLI (same Inspector, non-interactive)
+npx -y @modelcontextprotocol/inspector@2.7.0 --cli \
+  --server-url http://127.0.0.1:8080/mcp --transport http --method tools/list
+npx -y @modelcontextprotocol/inspector@2.7.0 --cli \
+  --server-url http://127.0.0.1:8080/mcp --transport http \
+  --method tools/call --tool-name search_catalog \
+  --tool-args-json '{"type":"SERVICE","active":true,"maxPrice":200,"pageSize":20}'
+```
+
+The Inspector web UI talks to a local Inspector proxy that makes the MCP HTTP requests, so it sends no `Origin` header; if a client does send `Origin: http://localhost:6274` it is already accepted by the default `http://localhost:*` entry. Tool errors surface in the UI as `Tool Error` with the message from `CatalogService`. See [Slice 8 validation](docs/SLICE_8_VALIDATION.md).
 
 ## Catalog database (Slice 2)
 

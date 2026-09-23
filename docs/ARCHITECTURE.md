@@ -1,6 +1,6 @@
 # MCP Catalog Platform architecture
 
-Decision gate resolved 2026-09-23. Current scope: implementation plan v0.1, decision gate and Slices 1–6. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
+Decision gate resolved 2026-09-23. Current scope: implementation plan v0.1, decision gate and Slices 1–8. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
 
 ## Pinned decisions
 
@@ -56,7 +56,7 @@ Flyway 12.4.0 is active in Slice 2 and owns all schema changes. Slice 4 activate
 
 PostgreSQL integration tests must use Testcontainers and fail if Docker is unavailable; no silent skipping. The existing context test now also runs Flyway against its isolated PostgreSQL container before verifying health and JDBC connectivity. Later host validation needs a user-configured Claude Code installation/account and must keep the MCP server private.
 
-The PRD's complete Phase 1 startup acceptance (schema, seed, MCP tools) is now met by the two registered catalog tools; Inspector and real-host validation remain in Slices 8 and 9. `backend/` follows the implementation plan and explicit task, replacing the PRD's illustrative `server-java/` layout. Slices 1–6 are implemented; Slice 7 has not been started.
+The PRD's complete Phase 1 startup acceptance (schema, seed, MCP tools) is now met by the two registered catalog tools, Slice 7 proved the whole path end to end, and Slice 8 validated the running server with MCP Inspector; real-host validation remains in Slice 9. `backend/` follows the implementation plan and explicit task, replacing the PRD's illustrative `server-java/` layout. Slices 1–8 are implemented; Slice 9 has not been started.
 
 ## Slice 2 persistence decisions
 
@@ -144,7 +144,15 @@ Input schema (generated): one property `id` of type `integer`, `required: ["id"]
 
 Error behaviour is inherited, not invented: an unknown identifier raises `CatalogItemNotFoundException` (`Catalog item not found: <id>`), a non-positive identifier raises `InvalidCatalogCriteriaException` (`Catalog item ID must be positive`), and a missing or non-integer `id` is rejected by the SDK's schema validation before the handler runs. All three surface as `isError: true` with a single text block and no stack trace, secret or fabricated item. Detail lookup applies no active/type filter: inactive rows are retrievable by identifier, matching `CatalogService.getItem`.
 
-`McpToolConfiguration` registers both annotated adapter objects in one `ToolCallbackProvider`, so the two tools share the accepted conversion and the `OptionalArgumentsToolCallback` normalization. Slice 7 remains unstarted.
+`McpToolConfiguration` registers both annotated adapter objects in one `ToolCallbackProvider`, so the two tools share the accepted conversion and the callback decorators described below.
+
+### Slice 7 MCP-boundary error sanitization
+
+Spring AI converts any exception thrown by a tool callback into an MCP tool error whose text is `exception.getMessage()`. The application's own validation and not-found messages are intentional, but an unexpected failure (JDBC, connectivity, serialization) could otherwise carry SQL text, connection strings, file paths, credentials or stack frames to an MCP client, contrary to PRD §14.
+
+`mcp.tools.SanitizingToolCallback` is the outermost callback decorator. It rethrows `InvalidCatalogCriteriaException` and `CatalogItemNotFoundException` unchanged — found anywhere in the cause chain, so framework wrapping does not hide them — and replaces every other `RuntimeException` with `SanitizedToolFailureException`, whose fixed message is `The tool failed due to an internal server error and returned no data.` The original failure is logged server-side at ERROR (tool name plus throwable; never the tool arguments, which may contain query data) and retained only as the cause. The decorator resolves the tool name defensively so that error reporting cannot itself fail.
+
+This is an additional `ToolCallback` in the already-accepted chain, not a new registration mechanism: tool name, description, input schema, argument binding, result conversion and the `ToolCallbackProvider` conversion are untouched, and no application exception or documented tool error changed. Schema-validation failures for malformed arguments are raised by the MCP SDK before the handler runs and therefore keep the SDK's own (non-sensitive) wording. Slice 8 remains unstarted.
 
 ### Origin and Host request protection
 
@@ -157,6 +165,6 @@ Validation runs on GET, POST and DELETE before Accept-header or JSON-RPC handlin
 - a present `Host` must match `mcp.server.security.allowed-hosts`, otherwise HTTP 421 `Invalid Host header`; an empty host list disables that check;
 - an empty origin list rejects every request that sends an `Origin` (deny-by-default).
 
-Defaults are loopback-only (`http://127.0.0.1:*`, `http://localhost:*`, and the matching hosts) and are overridable with `MCP_SERVER_SECURITY_ALLOWED_ORIGINS` / `MCP_SERVER_SECURITY_ALLOWED_HOSTS`. This does not change exposure: Compose still publishes only `127.0.0.1:8080`, PostgreSQL remains unpublished, and host execution still defaults to `SERVER_ADDRESS=127.0.0.1`. Browser clients that send a non-loopback origin — for example an MCP Inspector web UI on its own port — need an explicit allowlist entry; confirming that is Slice 8 work.
+Defaults are loopback-only (`http://127.0.0.1:*`, `http://localhost:*`, and the matching hosts) and are overridable with `MCP_SERVER_SECURITY_ALLOWED_ORIGINS` / `MCP_SERVER_SECURITY_ALLOWED_HOSTS`. This does not change exposure: Compose still publishes only `127.0.0.1:8080`, PostgreSQL remains unpublished, and host execution still defaults to `SERVER_ADDRESS=127.0.0.1`. Slice 8 resolved the open browser-origin question with MCP Inspector 2.7.0: the Inspector web UI drives a local proxy that performs the MCP HTTP requests, so no `Origin` header reaches the server from the browser, and the Inspector default endpoint (`http://localhost:6274`) falls inside the existing loopback wildcard in any case. No allowlist change was needed, and the default posture was re-verified after the observation.
 
 Because the provider bean is defined by the application rather than the starter, a Spring AI upgrade must re-check the provider builder arguments and the starter's back-off conditions. That is the accepted cost of pinning to Spring AI 2.0.1 / MCP SDK 2.0.0.

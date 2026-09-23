@@ -4,6 +4,7 @@ import java.util.stream.Stream;
 
 import com.example.mcpcatalog.mcp.tools.GetCatalogItemTool;
 import com.example.mcpcatalog.mcp.tools.OptionalArgumentsToolCallback;
+import com.example.mcpcatalog.mcp.tools.SanitizingToolCallback;
 import com.example.mcpcatalog.mcp.tools.SearchCatalogTool;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
@@ -21,7 +22,9 @@ import org.springframework.context.annotation.Configuration;
  * framework-generated from the annotated adapter methods, so this class only wires
  * beans and contains no catalog behavior. Each adapter object contributes its
  * annotated methods, which is how {@code search_catalog} and {@code get_catalog_item}
- * are registered together.
+ * are registered together. The two callback decorators are transport-boundary concerns,
+ * not catalog behavior: one normalizes an absent MCP {@code arguments} payload, the
+ * other keeps unexpected internal failure details out of the MCP error text.
  */
 @Configuration(proxyBeanMethods = false)
 public class McpToolConfiguration {
@@ -32,6 +35,7 @@ public class McpToolConfiguration {
 		ToolCallback[] callbacks = Stream.of(searchCatalogTool, getCatalogItemTool)
 			.flatMap(adapter -> Stream.of(ToolCallbacks.from(adapter)))
 			.map(OptionalArgumentsToolCallback::new)
+			.map(SanitizingToolCallback::new)
 			.toArray(ToolCallback[]::new);
 		return ToolCallbackProvider.from(callbacks);
 	}
