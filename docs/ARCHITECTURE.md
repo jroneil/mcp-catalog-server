@@ -1,6 +1,6 @@
 # MCP Catalog Platform architecture
 
-Decision gate resolved 2026-09-23. Scope: implementation plan v0.1, decision gate and Slice 1 only. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
+Decision gate resolved 2026-09-23. Current scope: implementation plan v0.1, decision gate and Slices 1–2. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
 
 ## Pinned decisions
 
@@ -46,14 +46,33 @@ Host 127.0.0.1:8080 -> Spring MVC / Actuator -> JDBC DataSource -> PostgreSQL:54
 
 Only health is exposed through Actuator. Health/readiness includes database connectivity and hides details. PostgreSQL has no published host port. Compose waits for `pg_isready` over TCP before starting the backend; the backend health check independently verifies a real JDBC connection through Actuator. A named volume persists PostgreSQL data at `/var/lib/postgresql` (PostgreSQL 18 image layout).
 
-Host execution defaults to a loopback listener. Compose explicitly sets the listener to `0.0.0.0` **inside the container** so port forwarding works; the host publication remains hardcoded to `127.0.0.1`. Changing the host port does not widen binding. Credentials are required environment configuration without committed defaults. Local `.env` files are ignored. SQL initialization is disabled; no schema, migrations, repositories or catalog code exist in this slice.
+Host execution defaults to a loopback listener. Compose explicitly sets the listener to `0.0.0.0` **inside the container** so port forwarding works; the host publication remains hardcoded to `127.0.0.1`. Changing the host port does not widen binding. Credentials are required environment configuration without committed defaults. Local `.env` files are ignored. Spring SQL script initialization remains disabled; Flyway now exclusively creates and seeds the catalog table as described below.
 
 ## Later boundaries and gates
 
 MCP adapter -> CatalogService -> repository -> PostgreSQL. REST will reuse the same service in Phase 2. Blocking persistence is consistent with synchronous MCP and MVC.
 
-Flyway is only dependency-managed now; Slice 2 adds it to runtime and owns all schema changes. MCP BOMs are only dependency management now; Slice 4 introduces the WebMVC starter and `/mcp`. Origin protection will be implemented and tested at that gate using an explicit allowlist/equivalent request filter, not assumed from transport defaults. Unsupported protection or transport incompatibility is a stop condition. No production authentication is implied.
+Flyway 12.4.0 is active in Slice 2 and owns all schema changes. MCP BOMs are only dependency management now; Slice 4 introduces the WebMVC starter and `/mcp`. Origin protection will be implemented and tested at that gate using an explicit allowlist/equivalent request filter, not assumed from transport defaults. Unsupported protection or transport incompatibility is a stop condition. No production authentication is implied.
 
-PostgreSQL integration tests must use Testcontainers and fail if Docker is unavailable; no silent skipping. Slice 1 tests load the real context against an isolated PostgreSQL container and verify health and JDBC connectivity without creating schema. Later host validation needs a user-configured Claude Code installation/account and must keep the MCP server private.
+PostgreSQL integration tests must use Testcontainers and fail if Docker is unavailable; no silent skipping. The existing context test now also runs Flyway against its isolated PostgreSQL container before verifying health and JDBC connectivity. Later host validation needs a user-configured Claude Code installation/account and must keep the MCP server private.
 
-The PRD's complete Phase 1 startup acceptance (schema, seed, MCP tools) remains deferred to its designated slices. `backend/` follows the implementation plan and explicit task, replacing the PRD's illustrative `server-java/` layout. No Slice 2 work is authorized here.
+The PRD's complete Phase 1 startup acceptance (schema, seed, MCP tools) remains deferred to its designated slices. `backend/` follows the implementation plan and explicit task, replacing the PRD's illustrative `server-java/` layout. Slice 2 is implemented; Slice 3 has not been started.
+
+## Slice 2 persistence decisions
+
+Spring Data JDBC is the chosen persistence model, consistent with the PRD's Spring Data requirement and the plan's allowance for alternatives to JPA. The Boot 4.1.1 managed starter supplies its exact dependency baseline. No Hibernate, auto-DDL, H2, service or transport layer is introduced. `CatalogItem`, `CatalogItemType` and `CatalogItemRepository` live under `com.example.mcpcatalog.catalog.persistence`.
+
+- Flyway uses the existing PostgreSQL `public` schema explicitly; the configured database user owns the created catalog objects. The local Compose user also performs migration, consistent with the existing local baseline. Separate migration/runtime roles are future deployment hardening.
+- `V1__create_catalog_item.sql` creates `public.catalog_item`; `V2__seed_catalog_items.sql` inserts 24 deterministic records. Applied migrations must never be edited; all future changes use a new versioned migration. No automatic baseline, repair, clean or alternate initialization path is enabled. Migration or validation failures abort context startup.
+- ID: `BIGINT GENERATED BY DEFAULT AS IDENTITY`, mapped to Java `Long`. Seeds explicitly use IDs 1–24 and restart the identity at 25. ID and unique SKU indexes are sufficient for this slice; no speculative search indexes.
+- SKU: unique, case-sensitive `VARCHAR(64)`, nonblank. Name: nonblank `VARCHAR(200)`. Description: nonblank `TEXT`. These are storage decisions, not a finalized service input-validation contract.
+- Type: `VARCHAR(16)` with a `PRODUCT`/`SERVICE` check constraint; Java enum maps by name. A PostgreSQL enum is unnecessary for this small extensible set.
+- Price: nonnegative `NUMERIC(12,2)` (up to 9,999,999,999.99), mapped to `BigDecimal`; zero is permitted for the initial consultation. No currency conversion or multicurrency behavior is introduced. PostgreSQL numeric scale can round extra fractional digits; future service validation must define acceptable input precision.
+- Active: non-null boolean, defaults true. All nine required fields are non-null.
+- Timestamps: `TIMESTAMP WITH TIME ZONE`, mapped to `OffsetDateTime`; comparisons use instants. Defaults initialize both on insert, with `updated_at >= created_at` enforced. There is no write API or update trigger: future update code must explicitly maintain `updated_at`. Seeds use fixed UTC timestamps.
+- Repository extends the narrow Spring Data `Repository` interface with only `findById`, `findBySku` and `count`. Missing lookups return `Optional.empty()`. No save/delete, unbounded list, search, pagination policy or business validation is exposed.
+- Seeds: 12 products and 12 services; each type has 9 active and 3 inactive rows. Prices span 0.00–1249.00. Stable examples are ID 1 / `PRD-101` (Ergonomic Wireless Mouse, 39.95) and ID 16 / `SVC-104` (Network Health Assessment, 199.00).
+
+Tests verify actual Flyway history, no pending migrations, repeat migration without duplicate seeds, every seeded row's mapping, known and missing lookups, type/status coverage, identity continuation and database constraints. An isolated test-only V3 creates a probe then divides by zero: application startup must fail with a Flyway cause and PostgreSQL must roll back the probe table. The fixture is under test resources and never packaged into the runtime JAR.
+
+Boot integration reference: [Flyway initialization](https://docs.spring.io/spring-boot/how-to/data-initialization.html). The Boot Flyway starter and the separate PostgreSQL database module are both present; merely adding Flyway core would not establish the Boot 4 integration.

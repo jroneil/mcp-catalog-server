@@ -1,6 +1,6 @@
 # MCP Catalog Platform
 
-Slice 1: Java 21 Spring Boot backend, PostgreSQL and Actuator health. Catalog behavior, Flyway migrations and MCP endpoints are not implemented yet. License: TBD before public distribution.
+Slices 1–2: Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence and Actuator health. Services, search business logic and MCP endpoints are not implemented yet. License: TBD before public distribution.
 
 ## Start locally
 
@@ -31,8 +31,23 @@ mvn -f backend/pom.xml --batch-mode --no-transfer-progress clean verify
 docker build -t mcp-catalog-server:0.1.0 backend
 ```
 
-The context test provisions its own PostgreSQL 18.6 container and verifies JDBC plus HTTP health/readiness; it needs no `.env` and never uses H2. Docker image builds compile/package but skip test execution; run the Maven gate separately. No database schema is created.
+The context test provisions its own PostgreSQL 18.6 container and verifies JDBC plus HTTP health/readiness; it needs no `.env` and never uses H2. Docker image builds compile/package but skip test execution; run the Maven gate separately. Flyway creates and seeds the catalog table. Additional PostgreSQL tests verify migrations, repository mappings, database constraints and failure of application startup on an invalid migration.
 
 For host execution, supply `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` for a reachable PostgreSQL instance, then run `mvn -f backend/pom.xml spring-boot:run`. Host execution binds `127.0.0.1:8080` by default; `.env` is read by Compose, not automatically by Spring Boot. Compose deliberately does not publish PostgreSQL.
 
-See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.1.md). Intended future MCP path: `/mcp`, synchronous Streamable HTTP; it is absent in Slice 1. Slice 2 has not been started.
+See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.1.md). Intended future MCP path: `/mcp`, synchronous Streamable HTTP; it remains absent. Slice 3 has not been started.
+
+## Catalog database (Slice 2)
+
+On startup, Flyway 12.4.0 applies `V1__create_catalog_item.sql` and `V2__seed_catalog_items.sql` to `public`. There are 24 seeded records: 12 products, 12 services, 18 active and 6 inactive. The persistence package uses Spring Data JDBC with read-only ID/SKU lookup and count. There is no catalog HTTP endpoint or service yet.
+
+Inspect through the private PostgreSQL container:
+
+```bash
+docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT version, description, success FROM public.flyway_schema_history ORDER BY installed_rank;"'
+docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT type, active, count(*) FROM public.catalog_item GROUP BY type, active ORDER BY type, active;"'
+```
+
+Applied migrations are immutable: add a new versioned migration for changes. Restarting on an existing volume validates history without reseeding. Migration failure prevents startup; do not bypass it with auto-DDL, Flyway repair or edited migration checksums. For a deliberate fresh local verification, `docker compose down -v` deletes the local database; then `docker compose up --build --wait --wait-timeout 180` recreates and migrates it.
+
+See [Slice 2 validation](docs/SLICE_2_VALIDATION.md) for exact checks and results. No manual database preparation or external AI service is needed for tests.
