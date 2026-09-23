@@ -1,6 +1,6 @@
 # MCP Catalog Platform
 
-Slices 1–2: Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence and Actuator health. Services, search business logic and MCP endpoints are not implemented yet. License: TBD before public distribution.
+Slices 1–3: Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence and Actuator health. Catalog search and detail are available through the application service; MCP and REST endpoints are not implemented yet. License: TBD before public distribution.
 
 ## Start locally
 
@@ -35,11 +35,11 @@ The context test provisions its own PostgreSQL 18.6 container and verifies JDBC 
 
 For host execution, supply `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` for a reachable PostgreSQL instance, then run `mvn -f backend/pom.xml spring-boot:run`. Host execution binds `127.0.0.1:8080` by default; `.env` is read by Compose, not automatically by Spring Boot. Compose deliberately does not publish PostgreSQL.
 
-See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.1.md). Intended future MCP path: `/mcp`, synchronous Streamable HTTP; it remains absent. Slice 3 has not been started.
+See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.1.md). Intended future MCP path: `/mcp`, synchronous Streamable HTTP; it remains absent. Slice 4 has not been started.
 
 ## Catalog database (Slice 2)
 
-On startup, Flyway 12.4.0 applies `V1__create_catalog_item.sql` and `V2__seed_catalog_items.sql` to `public`. There are 24 seeded records: 12 products, 12 services, 18 active and 6 inactive. The persistence package uses Spring Data JDBC with read-only ID/SKU lookup and count. There is no catalog HTTP endpoint or service yet.
+On startup, Flyway 12.4.0 applies `V1__create_catalog_item.sql` and `V2__seed_catalog_items.sql` to `public`. There are 24 seeded records: 12 products, 12 services, 18 active and 6 inactive. The persistence package uses Spring Data JDBC with read-only ID/SKU lookup and count. There is no catalog HTTP endpoint yet; application lookup behavior goes through CatalogService.
 
 Inspect through the private PostgreSQL container:
 
@@ -51,3 +51,9 @@ docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -
 Applied migrations are immutable: add a new versioned migration for changes. Restarting on an existing volume validates history without reseeding. Migration failure prevents startup; do not bypass it with auto-DDL, Flyway repair or edited migration checksums. For a deliberate fresh local verification, `docker compose down -v` deletes the local database; then `docker compose up --build --wait --wait-timeout 180` recreates and migrates it.
 
 See [Slice 2 validation](docs/SLICE_2_VALIDATION.md) for exact checks and results. No manual database preparation or external AI service is needed for tests.
+
+## Catalog application service (Slice 3)
+
+`CatalogService.search(CatalogSearchCriteria)` supports optional type, active status, maximum price and literal case-insensitive text matching across SKU/name/description. It returns an immutable page with items and totals. Defaults are page 0 / size 20; size is limited to 100, and results are ordered by unique ID ascending. `CatalogService.getItem(Long)` returns a mapped application result or an explicit not-found exception. There are no write operations.
+
+Validation bounds and precise text/price semantics are documented in [architecture](docs/ARCHITECTURE.md). Run the same Maven `clean verify` command above for service unit tests, real PostgreSQL service/filter/pagination tests, and all earlier regression tests. No AI provider or manual database setup is needed. See [Slice 3 validation](docs/SLICE_3_VALIDATION.md) for gate results.
