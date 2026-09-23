@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Slice 7 architecture-boundary verification.
+ * Slice 7 architecture-boundary verification, extended for Slice 11 REST.
  *
  * <p>These checks read the compiled production classes and search their constant pools,
  * so they catch references in method bodies and signatures alike — a direct repository
@@ -83,15 +83,36 @@ class McpArchitectureBoundaryTest {
 	}
 
 	@Test
-	void noRestControllerOrRequestMappedEndpointExistsInPhaseOne() {
-		List<Path> offenders = new java.util.ArrayList<>();
-		for (String forbidden : List.of("org/springframework/web/bind/annotation/RestController",
-				"org/springframework/web/bind/annotation/RequestMapping",
-				"org/springframework/stereotype/Controller")) {
-			offenders.addAll(classesContaining("", forbidden));
+	void restControllersAndRequestMappingsExistOnlyInTheRestAdapterPackage() {
+		List<Path> mapped = new java.util.ArrayList<>();
+		for (String annotation : List.of("RestController", "RequestMapping", "GetMapping",
+				"PostMapping", "PutMapping", "PatchMapping", "DeleteMapping", "ControllerAdvice")) {
+			mapped.addAll(classesContaining("", "org/springframework/web/bind/annotation/" + annotation));
 		}
+		mapped.addAll(classesContaining("", "org/springframework/stereotype/Controller"));
+		assertThat(mapped).isNotEmpty().allSatisfy(path ->
+				assertThat(path).startsWith(MAIN_CLASSES.resolve(BASE_PACKAGE + "rest")));
+	}
 
-		assertThat(offenders).as("Phase 1 ships no REST adapter").isEmpty();
+	@Test
+	void restUsesOnlyTheApplicationLayerForCatalogAccess() {
+		assertThat(classFiles("rest")).isNotEmpty();
+		for (String forbidden : List.of("catalog/persistence", "com/example/mcpcatalog/mcp",
+				"io/modelcontextprotocol", "org/springframework/ai", "java/sql", "javax/sql",
+				"org/springframework/jdbc", "org/springframework/data")) {
+			assertThat(classesContaining("rest", forbidden)).as(forbidden).isEmpty();
+		}
+		assertThat(classesContaining("rest", "catalog/application/CatalogService")).isNotEmpty();
+	}
+
+	@Test
+	void catalogLayersNeverDependOnRestOrWebTransport() {
+		for (String layer : List.of("catalog/application", "catalog/persistence")) {
+			for (String forbidden : List.of("com/example/mcpcatalog/rest", "org/springframework/web",
+					"jakarta/servlet")) {
+				assertThat(classesContaining(layer, forbidden)).as(layer + " -> " + forbidden).isEmpty();
+			}
+		}
 	}
 
 	@Test

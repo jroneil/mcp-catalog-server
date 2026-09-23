@@ -1,8 +1,8 @@
-# MCP Catalog Platform — Phase 1 test plan
+# MCP Catalog Platform — Phases 1 and 2 test plan
 
-**Status:** Phase 1 complete (Slices 1–10)
-**Source requirements:** PRD v0.3 §16 (Testing Strategy), §12 (Startup Acceptance), §14 (Error Handling), §15 (Security); Implementation Plan v0.1 §Slice 10
-**Scope:** Phase 1 only — the implemented and passing test suite. This document records what exists; it does not propose new tests.
+**Status:** Phase 1 complete (Slices 1–10); Slice 11 REST coverage added
+**Source requirements:** PRD v0.3 §16 (Testing Strategy), §12 (Startup Acceptance), §14 (Error Handling), §15 (Security); Implementation Plan v0.2, Slices 10–11
+**Scope:** Phase 1 baseline plus Slice 11 REST coverage. This document records what exists; it does not propose new tests.
 
 ---
 
@@ -28,7 +28,7 @@ curl --fail --silent --show-error http://127.0.0.1:8080/actuator/health/readines
 Docker image builds deliberately skip test execution (`-DskipTests`); the Maven gate
 above is the authoritative test run.
 
-**Current result: `clean verify` → BUILD SUCCESS, 184 tests, 0 failures, 0 errors, 0 skips.**
+**Current result: `clean verify` → BUILD SUCCESS, 232 tests, 0 failures, 0 errors, 0 skips. Phase 1 accepted baseline: 184 tests; approved transition and added coverage are recorded in [Slice 11 validation](SLICE_11_VALIDATION.md).**
 
 ---
 
@@ -50,7 +50,7 @@ suite.
 
 ---
 
-## 3. Suite inventory (184 tests)
+## 3. Suite inventory (232 tests including Slice 11)
 
 | Suite | Cases | Covers |
 | --- | ---: | --- |
@@ -70,8 +70,10 @@ suite.
 | `GetCatalogItemMcpIntegrationTest` | 12 | `get_catalog_item` end to end over Streamable HTTP |
 | `PhaseOneEndToEndMcpTest` | 23 | Whole Phase 1 path, contract freeze, security/transport regressions |
 | `McpInternalFailureSanitizationTest` | 7 | Injected internal failure through the real MCP client |
-| `McpArchitectureBoundaryTest` | 8 | Adapter/layer boundaries from compiled classes |
-| **Total** | **184** | |
+| `McpArchitectureBoundaryTest` | 10 | Existing MCP boundaries plus approved REST package/dependency transition |
+| `CatalogControllerTest` | 9 | HTTP binding, unchanged delegation, safe injected internal errors |
+| `CatalogRestIntegrationTest` | 37 | Real HTTP/PostgreSQL search/detail, validation, pagination, REST/MCP equivalence |
+| **Total** | **232** | |
 
 ---
 
@@ -83,7 +85,7 @@ suite.
 | Repository integration tests against PostgreSQL, migrations, not-found | `CatalogPersistenceTest`, `CatalogServicePostgresTest`, `FlywayStartupFailureTest` (Testcontainers) |
 | MCP tool tests: registration, input schemas, valid and invalid invocation, structured responses | `SearchCatalogToolTest`, `GetCatalogItemToolTest`, `McpToolDiscoveryTest`, `McpServerWiringTest` |
 | MCP integration tests: server startup, client initialisation, tool discovery, invocation, correct data from PostgreSQL | `SearchCatalogMcpIntegrationTest`, `GetCatalogItemMcpIntegrationTest`, `PhaseOneEndToEndMcpTest`, `McpInternalFailureSanitizationTest` |
-| REST tests | Out of Phase 1 scope — no REST adapter exists |
+| REST tests | Slice 11: `CatalogControllerTest`, `CatalogRestIntegrationTest`, architecture boundaries |
 | Frontend tests | Out of Phase 1 scope — no frontend exists |
 | Manual compatibility tests: MCP Inspector, one real MCP host | Recorded in `SLICE_8_VALIDATION.md` (Inspector 2.7.0) and `SLICE_9_VALIDATION.md` (opencode 1.18.23 + local Ollama). Manual by nature; not part of the automated gate. Ollama/hosted-provider *application* modes are Phase 2. |
 
@@ -122,4 +124,31 @@ Documented with exact commands and outputs in the corresponding validation recor
 - Tool result schemas are asserted structurally, not against a stored JSON Schema
   document, because Spring AI 2.0.1's `ToolCallback` conversion does not expose
   `outputSchema`.
-- Phase 2 REST, frontend and AI-provider tests do not exist and are out of scope.
+- Frontend and AI-provider tests remain deferred to Slices 12–16; Slice 11 includes REST tests.
+
+
+## 8. Slice 11 REST gate and approved architecture transition
+
+```bash
+mvn -f backend/pom.xml --batch-mode --no-transfer-progress test -Dtest=CatalogControllerTest,CatalogRestIntegrationTest,McpArchitectureBoundaryTest
+mvn -f backend/pom.xml --batch-mode --no-transfer-progress clean verify
+```
+
+The former `noRestControllerOrRequestMappedEndpointExistsInPhaseOne` absence assertion
+is replaced by `restControllersAndRequestMappingsExistOnlyInTheRestAdapterPackage`.
+The scan still covers all compiled production classes and now checks controller/advice
+and composed request-mapping annotations. Two additional tests prohibit REST access to
+persistence/SQL/MCP and application/persistence access to REST/web/servlet APIs. All
+other original tests remain unchanged; no test is disabled or skipped.
+
+REST MVC tests verify omitted inputs reach the service as null, even business-invalid
+inputs reach it unchanged, malformed scalar binding fails before invocation, and
+injected failures for search/detail return only the four-field sanitized 500 envelope.
+PostgreSQL tests compare actual HTTP results to actual MCP calls for all filters,
+combined criteria, pagination and known active/inactive detail; service validation
+messages match where transport inputs have equivalent representations. REST additionally
+verifies decimal scale rejection, malformed parameters/IDs, and 404 errors.
+
+REST preserves decimal query scale while MCP JSON can normalize trailing zeros; the
+`1.000` rejection is tested independently rather than asserting a false wire equivalence.
+No service or MCP behavior changes to force transport identity are permitted.

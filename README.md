@@ -1,6 +1,6 @@
 # MCP Catalog Platform
 
-Slices 1–10 (Phase 1 complete): Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence, Actuator health, and a Streamable HTTP MCP server exposing the `search_catalog` and `get_catalog_item` tools with request-origin protection. Catalog search and detail are available through the application service and through MCP; REST endpoints are not implemented yet. Phase 2 (Angular, REST, AI providers) has not been started. License: TBD before public distribution.
+Slices 1–10 (Phase 1 complete): Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence, Actuator health, and a Streamable HTTP MCP server exposing the `search_catalog` and `get_catalog_item` tools with request-origin protection. Slice 11 adds read-only REST catalog search and detail through the same CatalogService as MCP. Phase 2 follows implementation plan v0.2; Slices 12–17 have not started. License: TBD before public distribution.
 
 ## Start locally
 
@@ -35,7 +35,7 @@ The context test provisions its own PostgreSQL 18.6 container and verifies JDBC 
 
 For host execution, supply `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` for a reachable PostgreSQL instance, then run `mvn -f backend/pom.xml spring-boot:run`. Host execution binds `127.0.0.1:8080` by default; `.env` is read by Compose, not automatically by Spring Boot. Compose deliberately does not publish PostgreSQL.
 
-See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.1.md). The MCP endpoint is `/mcp` (synchronous Streamable HTTP) and exposes `search_catalog` and `get_catalog_item`; see the MCP section below. Slice 10 (the Phase 1 acceptance audit) is complete — see [Slice 10 validation](docs/SLICE_10_VALIDATION.md); Phase 2 has not been started.
+See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan v0.2](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md). The MCP endpoint is `/mcp` (synchronous Streamable HTTP) and exposes `search_catalog` and `get_catalog_item`; see the MCP section below. Slice 10 (the Phase 1 acceptance audit) is complete — see [Slice 10 validation](docs/SLICE_10_VALIDATION.md); Slice 11 adds the REST adapter; see [Slice 11 validation](docs/SLICE_11_VALIDATION.md). Slices 12–17 have not started.
 
 ## MCP server and tools (Slices 4–9)
 
@@ -130,7 +130,7 @@ curl -s -X POST http://127.0.0.1:8080/mcp -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_catalog_item","arguments":{"id":16}}}'
 ```
 
-`tools/list` returns exactly two tools. The search call returns the six active services priced at or below 200 (`SVC-101`, `SVC-102`, `SVC-103`, `SVC-104`, `SVC-107`, `SVC-108`); the detail call returns the `SVC-104` row. A real host validation is still outstanding (Slice 9). See [Slice 4 validation](docs/SLICE_4_VALIDATION.md), [Slice 5 validation](docs/SLICE_5_VALIDATION.md), [Slice 6 validation](docs/SLICE_6_VALIDATION.md), [Slice 7 validation](docs/SLICE_7_VALIDATION.md) and [Slice 8 validation](docs/SLICE_8_VALIDATION.md) for exact evidence.
+`tools/list` returns exactly two tools. The search call returns the six active services priced at or below 200 (`SVC-101`, `SVC-102`, `SVC-103`, `SVC-104`, `SVC-107`, `SVC-108`); the detail call returns the `SVC-104` row. Real-host validation was completed in Slice 9 with opencode and local Ollama; see [Slice 9 validation](docs/SLICE_9_VALIDATION.md). See [Slice 4 validation](docs/SLICE_4_VALIDATION.md), [Slice 5 validation](docs/SLICE_5_VALIDATION.md), [Slice 6 validation](docs/SLICE_6_VALIDATION.md), [Slice 7 validation](docs/SLICE_7_VALIDATION.md) and [Slice 8 validation](docs/SLICE_8_VALIDATION.md) for exact evidence.
 
 ### Connecting MCP Inspector
 
@@ -213,3 +213,37 @@ See [Slice 2 validation](docs/SLICE_2_VALIDATION.md) for exact checks and result
 `CatalogService.search(CatalogSearchCriteria)` supports optional type, active status, maximum price and literal case-insensitive text matching across SKU/name/description. It returns an immutable page with items and totals. Defaults are page 0 / size 20; size is limited to 100, and results are ordered by unique ID ascending. `CatalogService.getItem(Long)` returns a mapped application result or an explicit not-found exception. There are no write operations.
 
 Validation bounds and precise text/price semantics are documented in [architecture](docs/ARCHITECTURE.md). Run the same Maven `clean verify` command above for service unit tests, real PostgreSQL service/filter/pagination tests, and all earlier regression tests. No AI provider or manual database setup is needed. See [Slice 3 validation](docs/SLICE_3_VALIDATION.md) for gate results.
+
+
+## REST catalog (Slice 11)
+
+Both read-only endpoints use the same CatalogService and PostgreSQL data as MCP:
+
+```bash
+curl --fail --silent --show-error 'http://127.0.0.1:8080/api/v1/catalog?type=SERVICE&active=true&maxPrice=200'
+curl --fail --silent --show-error http://127.0.0.1:8080/api/v1/catalog/16
+```
+
+`GET /api/v1/catalog` accepts optional `type`, `active`, `maxPrice`, `text`, `page`,
+`pageSize`. It returns HTTP 200 JSON with `items`, `page`, `pageSize`, `totalItems`,
+`totalPages`. Existing service rules apply: default page 0/pageSize 20, page 0–10000,
+pageSize 1–100, fixed `id ASC` ordering, exact PRODUCT/SERVICE type, inclusive price
+0–9999999999.99 with at most two decimal places, and literal case-insensitive text
+(up to 200 characters, no NUL). Omitted active includes both states. Filters combine
+with AND; text matches SKU, name or description. Blank text means no text filter.
+
+`GET /api/v1/catalog/{id}` returns the nine-field item, including inactive records.
+Item timestamps are `createdAt`/`updatedAt`. There are no write endpoints.
+
+Malformed binding or service validation returns 400; missing positive IDs return 404;
+unexpected failures return a sanitized 500. Errors contain only `status`, `error`,
+`message`, `path`, for example:
+
+```json
+{"status":404,"error":"Not Found","message":"Catalog item not found: 99999","path":"/api/v1/catalog/99999"}
+```
+
+HTTP parameter parsing uses Spring MVC's existing scalar binding. Business validation
+stays in CatalogService. Decimal query text retains its scale (`maxPrice=1.000` is
+rejected); the MCP JSON transport may normalize trailing zeros before service validation.
+No frontend, CORS configuration or AI-provider integration is included in Slice 11.

@@ -1,6 +1,6 @@
 # MCP Catalog Platform architecture
 
-Decision gate resolved 2026-09-23. Current scope: implementation plan v0.1, decision gate and Slices 1–10 — Phase 1 is complete and Phase 2 has not been started. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
+Decision gate resolved 2026-09-23. Planning reference: [implementation plan v0.2](MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md), covering Phases 1 and 2. Slices 1–10 are complete and accepted; Phase 2 Slice 11 adds the approved REST adapter; Slices 12–17 have not started. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
 
 ## Pinned decisions
 
@@ -50,13 +50,13 @@ Host execution defaults to a loopback listener. Compose explicitly sets the list
 
 ## Later boundaries and gates
 
-MCP adapter -> CatalogService -> repository -> PostgreSQL. REST will reuse the same service in Phase 2. Blocking persistence is consistent with synchronous MCP and MVC.
+MCP adapter -> CatalogService -> repository -> PostgreSQL. The Slice 11 REST adapter reuses the same service. Blocking persistence is consistent with synchronous MCP and MVC.
 
 Flyway 12.4.0 is active in Slice 2 and owns all schema changes. Slice 4 activates the WebMVC Streamable HTTP starter and `/mcp`; the MCP adapter package and its request-origin protection are described below. The Slice 4 gate was reached with an explicit Origin/Host allowlist implemented through the SDK validator rather than assumed from transport defaults. No production authentication is implied.
 
 PostgreSQL integration tests must use Testcontainers and fail if Docker is unavailable; no silent skipping. The existing context test now also runs Flyway against its isolated PostgreSQL container before verifying health and JDBC connectivity. The MCP server must remain private. Real-host validation was completed in Slice 9 with a local Ollama-backed host (opencode 1.18.23); a Claude Code installation would additionally need its own account credentials.
 
-The PRD's complete Phase 1 startup acceptance (schema, seed, MCP tools) is now met by the two registered catalog tools, Slice 7 proved the whole path end to end, Slice 8 validated the running server with MCP Inspector, and Slice 9 completed real-host validation with a local Ollama-backed host. `backend/` follows the implementation plan and explicit task, replacing the PRD's illustrative `server-java/` layout. Slices 1–10 are implemented and Phase 1 is complete; Phase 2 has not been started.
+The PRD's complete Phase 1 startup acceptance (schema, seed, MCP tools) is now met by the two registered catalog tools, Slice 7 proved the whole path end to end, Slice 8 validated the running server with MCP Inspector, and Slice 9 completed real-host validation with a local Ollama-backed host. `backend/` follows the implementation plan and explicit task, replacing the PRD's illustrative `server-java/` layout. Slices 1–10 are implemented and Phase 1 is complete at the [Slice 10 acceptance boundary](SLICE_10_VALIDATION.md); Phase 2 follows v0.2; Slice 11 adds REST and later slices remain unstarted.
 
 ## Slice 2 persistence decisions
 
@@ -168,3 +168,33 @@ Validation runs on GET, POST and DELETE before Accept-header or JSON-RPC handlin
 Defaults are loopback-only (`http://127.0.0.1:*`, `http://localhost:*`, and the matching hosts) and are overridable with `MCP_SERVER_SECURITY_ALLOWED_ORIGINS` / `MCP_SERVER_SECURITY_ALLOWED_HOSTS`. This does not change exposure: Compose still publishes only `127.0.0.1:8080`, PostgreSQL remains unpublished, and host execution still defaults to `SERVER_ADDRESS=127.0.0.1`. Slice 8 resolved the open browser-origin question with MCP Inspector 2.7.0: the Inspector web UI drives a local proxy that performs the MCP HTTP requests, so no `Origin` header reaches the server from the browser, and the Inspector default endpoint (`http://localhost:6274`) falls inside the existing loopback wildcard in any case. No allowlist change was needed, and the default posture was re-verified after the observation.
 
 Because the provider bean is defined by the application rather than the starter, a Spring AI upgrade must re-check the provider builder arguments and the starter's back-off conditions. That is the accepted cost of pinning to Spring AI 2.0.1 / MCP SDK 2.0.0.
+
+
+## Slice 11 REST adapter (D1 and D2 approved)
+
+`com.example.mcpcatalog.rest.CatalogController` delegates directly to CatalogService.
+`GET /api/v1/catalog` binds optional `type`, `active`, `maxPrice`, `text`, `page`,
+`pageSize` to the existing criteria; `GET /api/v1/catalog/{id}` delegates detail lookup,
+including inactive records. No service, persistence, schema, migration or MCP contract
+changes are required. The existing annotation-free CatalogPage/CatalogItemView records
+are serialized as JSON: search has `items`, `page`, `pageSize`, `totalItems`, `totalPages`;
+items retain all nine fields with camelCase timestamps. No MCP DTO is referenced.
+
+CatalogService exclusively owns defaults, bounds, filtering, ordering and validation.
+Spring MVC performs standard String/Boolean/BigDecimal/Integer/Long binding; malformed
+values fail before invocation. The adapter adds no default values or validation bounds.
+Successful calls return 200, service validation/malformed binding returns 400, missing
+items return 404, and unexpected failures return a sanitized 500.
+`CatalogRestExceptionHandler` is scoped to the REST package so MCP errors are unaffected.
+The RestError JSON contains exactly `status`, `error` (HTTP reason phrase), `message`,
+`path` (request URI without query parameters). Only existing safe application validation
+and not-found messages are exposed; binding errors use `Malformed request parameter`
+and unexpected failures use `Internal server error`, never exception diagnostics.
+
+D2 replaces `noRestControllerOrRequestMappedEndpointExistsInPhaseOne` with
+`restControllersAndRequestMappingsExistOnlyInTheRestAdapterPackage`, scanning all
+production classes. Added checks prohibit REST persistence/SQL/MCP dependencies and
+catalog application/persistence dependencies on REST/web/servlet types. Existing MCP
+boundary tests and all other Phase 1 tests remain. Delegation tests additionally verify
+that optional and invalid service inputs are passed unchanged. No CORS, authentication,
+provider wiring, frontend, dependency upgrades or network configuration changes are added.
