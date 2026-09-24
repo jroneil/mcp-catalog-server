@@ -1,6 +1,6 @@
 # MCP Catalog Platform
 
-Slices 1–10 (Phase 1 complete): Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence, Actuator health, and a Streamable HTTP MCP server exposing the `search_catalog` and `get_catalog_item` tools with request-origin protection. Slice 11 adds read-only REST catalog search and detail through the same CatalogService as MCP. Phase 2 follows implementation plan v0.2; Slice 12 adds the Angular search UI; Slices 13–17 have not started. License: TBD before public distribution.
+Slices 1–10 (Phase 1 complete): Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence, Actuator health, and a Streamable HTTP MCP server exposing the `search_catalog` and `get_catalog_item` tools with request-origin protection. Slice 11 adds read-only REST catalog search and detail through the same CatalogService as MCP. Phase 2 follows implementation plan v0.2; Slice 12 adds Angular search, Slice 13 adds item detail and Slice 14 adds the backend local Ollama catalog assistant; Slices 15–17 have not started. License: TBD before public distribution.
 
 ## Start locally
 
@@ -33,11 +33,11 @@ mvn -f backend/pom.xml --batch-mode --no-transfer-progress clean verify
 docker build -t mcp-catalog-server:0.1.0 backend
 ```
 
-The context test provisions its own PostgreSQL 18.6 container and verifies JDBC plus HTTP health/readiness; it needs no `.env` and never uses H2. Docker image builds compile/package but skip test execution; run the Maven gate separately. Flyway creates and seeds the catalog table. Additional PostgreSQL tests verify migrations, repository mappings, database constraints and failure of application startup on an invalid migration. The Slice 4 suites start the real MCP server on a random port and verify server identity, advertised capabilities, the `/mcp` route, Origin/Host rejection and tool discovery. The Slice 5 and 6 suites verify both tool contracts, mapping, validation and error behavior, and drive the production tools with a real MCP client against the seeded catalog. Slice 7 adds an end-to-end acceptance suite over the whole MCP path, architecture-boundary checks and failure-path sanitization coverage. The backend gate currently runs **232 tests** with no failures, including Slice 11 REST and REST/MCP equivalence coverage. Slice 12 adds **25 frontend tests** and a real-browser smoke check.
+The context test provisions its own PostgreSQL 18.6 container and verifies JDBC plus HTTP health/readiness; it needs no `.env` and never uses H2. Docker image builds compile/package but skip test execution; run the Maven gate separately. Flyway creates and seeds the catalog table. Additional PostgreSQL tests verify migrations, repository mappings, database constraints and failure of application startup on an invalid migration. The Slice 4 suites start the real MCP server on a random port and verify server identity, advertised capabilities, the `/mcp` route, Origin/Host rejection and tool discovery. The Slice 5 and 6 suites verify both tool contracts, mapping, validation and error behavior, and drive the production tools with a real MCP client against the seeded catalog. Slice 7 adds an end-to-end acceptance suite over the whole MCP path, architecture-boundary checks and failure-path sanitization coverage. The backend gate currently runs **263 tests** with no failures, including Slice 11 REST and REST/MCP equivalence coverage and Slice 14 assistant coverage. Slices 12–13 provide **40 frontend tests** and a real-browser search/detail smoke check.
 
 For host execution, supply `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` for a reachable PostgreSQL instance, then run `mvn -f backend/pom.xml spring-boot:run`. Host execution binds `127.0.0.1:8080` by default; `.env` is read by Compose, not automatically by Spring Boot. Compose deliberately does not publish PostgreSQL.
 
-See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan v0.2](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md). The MCP endpoint is `/mcp` (synchronous Streamable HTTP) and exposes `search_catalog` and `get_catalog_item`; see the MCP section below. Slice 10 (the Phase 1 acceptance audit) is complete — see [Slice 10 validation](docs/SLICE_10_VALIDATION.md); Slice 11 adds the REST adapter; see [Slice 11 validation](docs/SLICE_11_VALIDATION.md). Slice 12 adds the Angular search UI; Slices 13–17 have not started.
+See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan v0.2](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md). The MCP endpoint is `/mcp` (synchronous Streamable HTTP) and exposes `search_catalog` and `get_catalog_item`; see the MCP section below. Slice 10 (the Phase 1 acceptance audit) is complete — see [Slice 10 validation](docs/SLICE_10_VALIDATION.md); Slice 11 adds the REST adapter; see [Slice 11 validation](docs/SLICE_11_VALIDATION.md). Slice 12 adds Angular search and Slice 13 adds item detail; Slices 14–17 have not started.
 
 ## MCP server and tools (Slices 4–9)
 
@@ -282,5 +282,81 @@ from `frontend/` for the real-browser acceptance check; alternatively install th
 Playwright browser with `npx playwright install chromium` and run `npm run smoke`.
 See [frontend instructions](frontend/README.md) and [Slice 12 validation](docs/SLICE_12_VALIDATION.md).
 
-Slice 12 does not include a detail page, AI UI/providers, writes/admin, authentication,
-or Phase 3 functionality. The existing REST detail endpoint remains available.
+Slice 13 adds item detail below. AI UI/providers, writes/admin, authentication and
+Phase 3 functionality remain excluded.
+
+
+## Catalog item detail (Slice 13)
+
+Select a catalog item's linked name to open `/catalog/{id}`, for example
+http://127.0.0.1:4200/catalog/16. The page fetches the existing REST detail endpoint
+and displays name, description, type, price, status, SKU, ID and timestamps (UTC).
+Inactive items remain accessible. Loading, not-found, validation and backend/request
+failures have distinct states, with retry for request failures and a **Back to catalog**
+link in every state.
+
+Returning within the current tab restores the submitted filters, page and any unsubmitted
+form edits, then reloads search results from REST. Browser back/forward also works.
+The small search snapshot is in memory only: refreshing or opening a direct detail link
+starts a new session, so returning from that session shows the default search.
+Direct detail URLs and refresh work through the unchanged nginx SPA fallback.
+
+The existing frontend test/build/smoke commands cover detail as well as search.
+See [Slice 13 validation](docs/SLICE_13_VALIDATION.md).
+
+## Local catalog assistant (Slice 14)
+
+`POST /api/v1/catalog/assistant` interprets one bounded natural-language catalog search
+request with a local Ollama model, invokes the existing `search_catalog` capability and
+returns results grounded in the catalog database. It is a new endpoint; the accepted
+`/api/v1/catalog` search and detail endpoints are unchanged.
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/api/v1/catalog/assistant \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Show me active service items under $200."}'
+```
+
+The request is `{"prompt": "..."}`: required, trimmed, non-blank and at most 1000
+characters, otherwise 400. The response is:
+
+```json
+{
+  "answer": "…", "capability": "search_catalog", "arguments": { "type": "SERVICE", "active": true, "maxPrice": 199.99 },
+  "items": [ … ], "page": 0, "pageSize": 20, "totalItems": 6, "totalPages": 1,
+  "provider": "ollama", "model": "qwen3-coder-next:latest"
+}
+```
+
+`items` and the page metadata come from the catalog capability result, not from the model,
+and `arguments` are the arguments actually used. Model-generated arguments pass through the
+existing `CatalogService` validation, so invalid values produce the same safe 400 as REST
+search. Exactly one capability invocation is permitted per request, and there is no model or
+tool retry.
+
+Configuration is environment-backed:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `AI_ENABLED` | `true` | Set `false` to disable the assistant (endpoint returns 503) |
+| `AI_PROVIDER` | `ollama` | Only `ollama` is implemented in Slice 14 |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` host, `http://host.docker.internal:11434` in Compose | Ollama endpoint |
+| `OLLAMA_MODEL` | `qwen3-coder-next:latest` | Local model |
+| `AI_TIMEOUT` | `60s` | Bounded provider timeout (504 on expiry) |
+
+Compose passes `OLLAMA_BASE_URL=http://host.docker.internal:11434` and adds the minimal
+`extra_hosts: host.docker.internal:host-gateway` mapping so the backend container can reach
+a local Ollama that stays outside Compose. No Ollama service is added and PostgreSQL and the
+backend keep their existing loopback-only publication.
+
+**The application does not require Ollama to start.** Startup never contacts it and REST,
+MCP and catalog behavior work normally without it; only the assistant endpoint reports a
+sanitized 503 when the provider is unreachable. A non-`ollama` provider value, or
+`AI_ENABLED=false`, disables the assistant without affecting startup. Local mode talks only
+to the local Ollama instance and the existing local application/database path; no hosted
+provider is configured, no automatic hosted fallback exists and no hosted credential is
+required. Errors are sanitized (400 invalid or unsupported request, 503 unavailable, 504
+timeout, 500 internal) and never include provider diagnostics, prompts or stack traces.
+
+There is no AI user interface in Slice 14 — Angular AI interaction is Slice 16 and the
+hosted provider is Slice 15. See [Slice 14 validation](docs/SLICE_14_VALIDATION.md).

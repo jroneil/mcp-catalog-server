@@ -51,4 +51,24 @@ describe('CatalogApi', () => {
     expect(request.request.params.has('type')).toBe(false);
     request.flush({});
   });
+
+  it('retrieves detail using the relative GET endpoint without search filters', () => {
+    api.detail('22').subscribe(item => expect(item.active).toBe(false));
+    const request = http.expectOne('/api/v1/catalog/22');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.params.keys()).toEqual([]);
+    request.flush({ id: 22, active: false });
+  });
+
+  it('preserves large identifier strings rather than rounding them in JavaScript', () => {
+    api.detail('9223372036854775807').subscribe();
+    http.expectOne('/api/v1/catalog/9223372036854775807').flush({});
+  });
+
+  it('encodes identifiers as one path segment and leaves validation to REST', () => {
+    api.detail('invalid/id?x=1').subscribe({ error: failure => expect(failure.status).toBe(400) });
+    http.expectOne('/api/v1/catalog/invalid%2Fid%3Fx%3D1')
+      .flush({ status: 400 }, { status: 400, statusText: 'Bad Request' });
+  });
+
 });

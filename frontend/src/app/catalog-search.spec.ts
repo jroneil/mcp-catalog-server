@@ -1,7 +1,8 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { App } from './app';
+import { CatalogSearchComponent } from './catalog-search';
+import { provideRouter } from '@angular/router';
 import { CatalogItem, CatalogPage } from './catalog-api';
 
 const item: CatalogItem = {
@@ -12,12 +13,12 @@ const item: CatalogItem = {
 const page: CatalogPage = { items: [item], page: 0, pageSize: 1, totalItems: 2, totalPages: 2 };
 
 describe('Catalog search screen', () => {
-  let fixture: ComponentFixture<App>;
+  let fixture: ComponentFixture<CatalogSearchComponent>;
   let http: HttpTestingController;
   let root: HTMLElement;
   beforeEach(async () => {
-    await TestBed.configureTestingModule({ imports: [App], providers: [provideHttpClient(), provideHttpClientTesting()] }).compileComponents();
-    fixture = TestBed.createComponent(App);
+    await TestBed.configureTestingModule({ imports: [CatalogSearchComponent], providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }).compileComponents();
+    fixture = TestBed.createComponent(CatalogSearchComponent);
     root = fixture.nativeElement;
     http = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
@@ -57,7 +58,7 @@ describe('Catalog search screen', () => {
     expect(root.textContent).toContain('199.00');
     expect(root.textContent).toContain('Inactive');
     expect(root.textContent).toContain('Page 1 of 2');
-    expect(root.querySelector('article a')).toBeNull(); // Detail is Slice 13.
+    expect(root.querySelector('article a')?.getAttribute('href')).toBe('/catalog/16');
   });
 
   it('shows an empty state and disables page navigation', () => {

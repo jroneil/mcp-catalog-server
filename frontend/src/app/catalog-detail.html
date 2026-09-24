@@ -1,0 +1,30 @@
+<a class="back-link" routerLink="/">← Back to catalog</a>
+<section aria-label="Catalog item detail" [attr.aria-busy]="loading()">
+  @if (loading()) {
+    <div class="state" role="status"><h1>Loading item…</h1><p>Retrieving catalog details.</p></div>
+  }
+  @if (notFound()) {
+    <div class="state" role="status"><h1>Item not found</h1><p>This catalog item could not be found. Return to the catalog to find another item.</p></div>
+  }
+  @if (error(); as message) {
+    <div class="state error" role="alert"><h1>Item could not be loaded</h1><p>{{ message }}</p><button type="button" (click)="retry()">Try again</button></div>
+  }
+  @if (item(); as record) {
+    <article class="detail-card">
+      <div class="heading">
+        <div><p class="eyebrow">{{ record.type === 'PRODUCT' ? 'Product' : 'Service' }} · {{ record.sku }}</p><h1>{{ record.name }}</h1></div>
+        <span class="status" [class.inactive]="!record.active">{{ record.active ? 'Active' : 'Inactive' }}</span>
+      </div>
+      <p class="description">{{ record.description }}</p>
+      <div class="price"><span>Price</span><strong>{{ record.price | number:'1.2-2' }}</strong></div>
+      <dl>
+        <div><dt>Catalog ID</dt><dd>{{ record.id }}</dd></div>
+        <div><dt>SKU</dt><dd>{{ record.sku }}</dd></div>
+        <div><dt>Type</dt><dd>{{ record.type === 'PRODUCT' ? 'Product' : 'Service' }}</dd></div>
+        <div><dt>Availability</dt><dd>{{ record.active ? 'Active' : 'Inactive' }}</dd></div>
+        <div><dt>Created (UTC)</dt><dd><time [attr.datetime]="record.createdAt">{{ record.createdAt | date:'medium':'UTC' }}</time></dd></div>
+        <div><dt>Last updated (UTC)</dt><dd><time [attr.datetime]="record.updatedAt">{{ record.updatedAt | date:'medium':'UTC' }}</time></dd></div>
+      </dl>
+    </article>
+  }
+</section>

@@ -35,6 +35,10 @@ export interface CatalogSearch {
 export class CatalogApi {
   private readonly http = inject(HttpClient);
 
+  detail(id: string) {
+    return this.http.get<CatalogItem>(`/api/v1/catalog/${encodeURIComponent(id)}`);
+  }
+
   search(criteria: CatalogSearch = {}) {
     let params = new HttpParams();
     for (const [key, value] of Object.entries(criteria)) {

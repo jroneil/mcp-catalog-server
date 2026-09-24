@@ -1,8 +1,8 @@
 # MCP Catalog Platform — Phases 1 and 2 test plan
 
-**Status:** Phase 1 complete (Slices 1–10); Slices 11–12 REST/frontend coverage added
-**Source requirements:** PRD v0.3 §16 (Testing Strategy), §12 (Startup Acceptance), §14 (Error Handling), §15 (Security); Implementation Plan v0.2, Slices 10–12
-**Scope:** Phase 1 baseline plus Slice 11 REST and Slice 12 frontend coverage. This document records what exists; it does not propose new tests.
+**Status:** Phase 1 complete (Slices 1–10); Slices 11–14 REST/frontend/AI coverage added
+**Source requirements:** PRD v0.3 §16 (Testing Strategy), §12 (Startup Acceptance), §14 (Error Handling), §15 (Security); Implementation Plan v0.2, Slices 10–14
+**Scope:** Phase 1 baseline plus Slice 11 REST, Slices 12–13 frontend and Slice 14 local-AI coverage. This document records what exists; it does not propose new tests.
 
 ---
 
@@ -86,7 +86,7 @@ suite.
 | MCP tool tests: registration, input schemas, valid and invalid invocation, structured responses | `SearchCatalogToolTest`, `GetCatalogItemToolTest`, `McpToolDiscoveryTest`, `McpServerWiringTest` |
 | MCP integration tests: server startup, client initialisation, tool discovery, invocation, correct data from PostgreSQL | `SearchCatalogMcpIntegrationTest`, `GetCatalogItemMcpIntegrationTest`, `PhaseOneEndToEndMcpTest`, `McpInternalFailureSanitizationTest` |
 | REST tests | Slice 11: `CatalogControllerTest`, `CatalogRestIntegrationTest`, architecture boundaries |
-| Frontend tests | Slice 12: API mapping and search-screen tests (25); real-browser smoke through nginx and dev proxy. Detail navigation remains Slice 13. |
+| Frontend tests | Slices 12–13: 40 API/search/detail routing cases; real-browser search/detail smoke. |
 | Manual compatibility tests: MCP Inspector, one real MCP host | Recorded in `SLICE_8_VALIDATION.md` (Inspector 2.7.0) and `SLICE_9_VALIDATION.md` (opencode 1.18.23 + local Ollama). Manual by nature; not part of the automated gate. Ollama/hosted-provider *application* modes are Phase 2. |
 
 ---
@@ -124,7 +124,7 @@ Documented with exact commands and outputs in the corresponding validation recor
 - Tool result schemas are asserted structurally, not against a stored JSON Schema
   document, because Spring AI 2.0.1's `ToolCallback` conversion does not expose
   `outputSchema`.
-- Detail navigation and AI-provider tests remain deferred to Slices 13–16; Slice 12 covers search UI and routing.
+- AI-provider tests remain deferred to Slices 14–16; frontend search and detail are covered.
 
 
 ## 8. Slice 11 REST gate and approved architecture transition
@@ -154,7 +154,7 @@ REST preserves decimal query scale while MCP JSON can normalize trailing zeros; 
 No service or MCP behavior changes to force transport identity are permitted.
 
 
-## 9. Slice 12 frontend and runtime gates
+## 9. Frontend and runtime gates (Slices 12–13)
 
 With approved Node 22.22.3 / npm 10.9.8:
 
@@ -169,9 +169,10 @@ CHROME_BIN=/usr/bin/google-chrome npm run smoke
 
 | Suite | Cases | Coverage |
 | --- | ---: | --- |
-| catalog-api.spec.ts | 9 | Relative GET, each filter, combined request, pagination, omission and verbatim invalid inputs |
-| app.spec.ts | 16 | Default/loading, records, empty, form mapping, defaults/bounds, next/previous, new search, validation/malformed errors, backend/network failures, retry and stale-request cancellation |
-| scripts/catalog-smoke.mjs | Browser acceptance | Real seed data via nginx and dev proxy, paging, six expected active services, empty/400 states, mobile overflow and same-origin API calls |
+| catalog-api.spec.ts | 12 | Relative search/detail GET, filters, pagination, omission, verbatim invalid inputs, encoded and large identifiers |
+| catalog-search.spec.ts (moved from app.spec.ts) | 16 | Default/loading, records, empty, form mapping, defaults/bounds, next/previous, new search, validation/malformed errors, backend/network failures, retry and stale-request cancellation |
+| catalog-detail.spec.ts | 12 | Actual Angular routing: linked/direct detail, all fields, inactive items, 404, 400, backend/network errors, retry, cancellation, return and restored filters/page/drafts |
+| scripts/catalog-smoke.mjs | Browser acceptance | Real seed data via nginx and dev proxy, paging, six expected active services, empty/400 states, mobile overflow and same-origin API calls; Slices 12–13 add result→detail navigation, all-field detail, inactive direct URL/refresh, not-found, browser back/forward, restored search, offline failure/retry |
 
 Frontend unit tests and production build pass. Full backend Maven clean verify remains
 232 tests with no failures/errors/skips. The browser check uses real REST/PostgreSQL;
@@ -182,3 +183,41 @@ fallback, /mcp not proxied, unchanged backend MCP origin rejection, frontend/bac
 loopback publication and private PostgreSQL. No frontend business-validation limits are
 introduced; invalid values reach the existing service and its safe error is displayed.
 See [Slice 12 validation](SLICE_12_VALIDATION.md) for exact commands and evidence.
+
+
+## 10. Slice 13 detail validation
+
+The 25 accepted frontend cases remain, with the search suite moved to its extracted
+component and its old no-detail-link assertion replaced by the actual detail href.
+Three API cases and twelve routing cases bring the frontend total to 40. Tests use
+real Angular routing and HttpTestingController, including the shared App outlet shell.
+They ensure direct detail visits do not fetch a search page, errors never fabricate
+records, route changes/return cancel pending requests, and back-to-catalog restores
+submitted criteria/page separately from unsubmitted form edits.
+
+The browser smoke retains all original search checks and adds links, browser history,
+all-field detail, inactive direct URLs/refresh, not-found, offline failure/retry and
+return navigation against real REST/PostgreSQL. Browser offline mode simulates a network
+failure without changing the backend. Existing backend tests remain unchanged.
+See [Slice 13 validation](SLICE_13_VALIDATION.md) for exact gate results.
+
+## Slice 14 backend AI coverage
+
+Thirty-one tests cover the bounded local catalog assistant without contacting a provider.
+`ai.CatalogAssistantServiceTest` drives the real Spring AI tool-calling pipeline with a
+scripted chat model over the real `search_catalog` capability adapter and a mocked
+`CatalogService`: grounded items/page metadata, the arguments actually used, prompt trimming
+and bounds, two capability calls in one turn (rejected without executing any), a second call
+in a later turn (rejected after exactly one execution), invalid generated arguments rejected
+by existing service validation, unsupported intent, malformed tool output, an unknown tool
+name, an empty answer, provider unavailability, provider timeout and sanitized unexpected
+failures. `rest.CatalogAssistantHttpTest` covers the documented response shape and the
+400/503/504/500 mappings including the unavailable-when-unconfigured case.
+`ai.CatalogAssistantConfigurationTest` proves the enabled/provider gating and that no hosted
+fallback exists. `ai.CatalogAssistantStartupWithoutOllamaTest` boots the full application
+against Testcontainers PostgreSQL with Ollama unreachable and verifies startup, health,
+REST, the accepted two MCP tools and a sanitized 503 from the assistant only.
+
+The full backend gate is **263 tests** with no failures; the live local Ollama acceptance
+scenario, its PostgreSQL confirmation and the local data-path evidence are in
+[Slice 14 validation](SLICE_14_VALIDATION.md). Mocks do not replace the live requirement.

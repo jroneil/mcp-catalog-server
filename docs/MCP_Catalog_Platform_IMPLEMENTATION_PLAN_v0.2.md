@@ -1,6 +1,6 @@
 # MCP Catalog Platform — Phases 1 and 2 Implementation Plan
 
-**Status:** Phase 1 accepted; Phase 2 in progress: Slice 11 complete; Slice 12 complete; Slices 13–17 not started
+**Status:** Phase 1 accepted; Phase 2 in progress: Slices 11–14 complete; Slices 15–17 not started
 **Version:** 0.2  
 **Date:** 2026-09-23  
 **Source PRD:** `MCP_Catalog_Platform_PRD_v0.3.md`  
@@ -12,11 +12,11 @@
 
 [Implementation plan v0.1](MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.1.md) remains unchanged as the historical Phase 1 plan. Slices 1–10 below are reproduced verbatim and are completed historical slices, not reopened work. Their original checklist boxes and prospective wording are retained as historical requirements; [Slice 10 validation](SLICE_10_VALIDATION.md) is the authoritative Phase 1 completion/acceptance boundary (184 tests passed). Historical Phase 1 prohibitions and stop conditions apply to Phase 1 only.
 
-The Phase 2 plan and decision gates begin in section 8. The user subsequently approved D1 and completed Slice 11, then approved D3 and authorized Slice 12 only. Decisions explicitly marked open remain unresolved; Slices 13–17 have not started. No commits are authorized for Slice 12.
+The Phase 2 plan and decision gates begin in section 8. The user subsequently approved D1 and completed Slice 11, then approved D3 and completed Slice 12, then authorized and completed Slice 13, and approved D4–D7 with the backend portion of D9 and completed Slice 14. D8 and the UI portion of D9 remain open; Slices 15–17 have not started. No commits are authorized for Slice 14.
 
 ## 1. Purpose
 
-This revision preserves the completed Phase 1 plan and adds the approved Phase 2 slice decomposition derived from PRD v0.3. Slices 11–12 are complete; later slices have not started. See [Slice 12 validation](SLICE_12_VALIDATION.md). See [Slice 11 validation](SLICE_11_VALIDATION.md).
+This revision preserves the completed Phase 1 plan and adds the approved Phase 2 slice decomposition derived from PRD v0.3. Slices 11–14 are complete; later slices have not started. See [Slice 12 validation](SLICE_12_VALIDATION.md). See [Slice 11 validation](SLICE_11_VALIDATION.md).
 
 The plan is intentionally narrow.
 
@@ -816,8 +816,8 @@ Phase 2 derives from PRD FR-7–FR-13A and supporting §§9–16, 19, 21–23. I
 | --- | --- | --- |
 | 11 | Read-only catalog REST adapter | Complete; see Slice 11 validation |
 | 12 | Angular catalog search and Docker integration | Complete; see Slice 12 validation |
-| 13 | Angular catalog item detail | Planned |
-| 14 | Local Ollama catalog workflow — backend | Planned; AI decisions pending |
+| 13 | Angular catalog item detail | Complete; see Slice 13 validation |
+| 14 | Local Ollama catalog workflow — backend | Complete; see Slice 14 validation |
 | 15 | Hosted provider and configuration-based selection | Planned; provider decisions pending |
 | 16 | Natural-language catalog workflow in Angular | Planned |
 | 17 | Phase 2 acceptance audit and documentation | Planned |
@@ -848,12 +848,12 @@ The slice decomposition is approved. The decisions below distinguish approval of
 | D1 — REST contract | Slice 11 | Approved by the user for Slice 11: exact contract below; preserve CatalogService semantics. |
 | D2 — REST test transition | Slice 11 | Approved policy below; apply the enduring architecture-boundary coverage in Slice 11. |
 | D3 — Frontend toolchain and routing | Slice 12 | Resolved by user approval: Angular 22.x stable (npm resolves core 22.2.0), matching CLI major (stable 22.1.8), Node 22.22.3, npm 10.9.8 with package-lock.json and npm ci; local port 4200, same-origin nginx and development proxy. See D3 details below and ARCHITECTURE. |
-| D4 — AI capability invocation | Slice 14 | Open: in-process model tool adapter calling CatalogService versus internal MCP connection. FR-13 does not specify the mechanism; FR-17 places a standalone Java MCP client in Phase 3. Resolve the application path without assuming a Phase 3 deliverable. |
-| D5 — AI workflow contract and limits | Slice 14 | Open: exact single catalog workflow, request/result format, backend endpoint, unsupported-intent behavior, execution limits/timeouts and UI presentation contract. Do not expand into general chat. |
-| D6 — Local model and data path | Slice 14 | Open: primary Ollama model and available installation; model tool-call capability; container-to-host connectivity; evidence demonstrating no required hosted transmission of catalog/business prompt data. Prior external-host model success is not sufficient evidence for this application path. |
-| D7 — Provider selection and startup | Slice 14; finalized in Slice 15 | Open: configuration keys, absent-provider behavior, and switching semantics. Configuration-based selection is required; hot switching is not. Preserve standalone Phase 1 operation and tests without provider credentials. |
+| D4 — AI capability invocation | Slice 14 | Resolved by user approval: in-process Spring AI tool calling. The workflow passes the existing `search_catalog` capability adapter to the chat client; no internal MCP client, no `/mcp` self-connection, no new MCP tool and no MCP contract change. See ARCHITECTURE. |
+| D5 — AI workflow contract and limits | Slice 14 | Resolved by user approval: `POST /api/v1/catalog/assistant` with `{"prompt":"..."}` (required, trimmed, non-blank, at most 1000 characters) returning `{answer, capability, arguments, items, page, pageSize, totalItems, totalPages, provider, model}`; unsupported intent returns 400 with a catalog-search-only message; exactly one capability call, no model or tool retry, 60 s externalized provider timeout, and sanitized 400/503/504/500 errors. No general chat. See ARCHITECTURE. |
+| D6 — Local model and data path | Slice 14 | Resolved by user approval: primary model `qwen3-coder-next:latest` — already installed, advertises tool capability, and demonstrated native `tool_calls` in Slice 9, whereas `qwen2.5-coder:14b` emitted arguments as plain text. Ollama stays outside Compose; the backend reaches the host through `OLLAMA_BASE_URL` and the minimal Linux `extra_hosts: host.docker.internal:host-gateway` mapping. Slice 14 validation records the live local data path and evidence that no hosted transmission is involved. |
+| D7 — Provider selection and startup | Slice 14; finalized in Slice 15 | Resolved for Slice 14 by user approval: application-level `catalog.ai.enabled/provider/timeout` over the starter's `spring.ai.ollama.*`, environment-backed by `AI_ENABLED`, `AI_PROVIDER`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `AI_TIMEOUT`; assistant beans exist only when enabled and the provider is `ollama`; REST, MCP and catalog start and work with Ollama absent and startup never contacts it; no hosted credential and no automatic fallback. Multi-provider switching is finalized in Slice 15. |
 | D8 — Hosted provider | Slice 15 | Open: first provider/model, compatible module and externally supplied credentials for live validation. Do not introduce an automatic hosted fallback. |
-| D9 — Live workflow acceptance | Backend scenario before Slice 14; UI scenario before Slice 16 | Open: agreed demonstration inputs, expected database-grounded outcome and evidence for actual capability invocation in both modes. Mocks alone cannot close this gate. |
+| D9 — Live workflow acceptance | Backend scenario before Slice 14; UI scenario before Slice 16 | Backend portion resolved: the agreed input `Show me active service items under $200.` invoked the catalog capability live and returned persisted IDs 13, 14, 15, 16, 19, 20 with recorded provider/model, arguments and PostgreSQL confirmation (Slice 14 validation). The UI scenario remains open until Slice 16. |
 
 ### D2: approved REST architecture-test transition
 

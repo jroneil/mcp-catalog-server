@@ -1,6 +1,6 @@
 # MCP Catalog Platform architecture
 
-Decision gate resolved 2026-09-23. Planning reference: [implementation plan v0.2](MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md), covering Phases 1 and 2. Slices 1–10 are complete and accepted; Phase 2 Slice 11 adds the approved REST adapter; Slice 12 adds Angular search; Slices 13–17 have not started. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
+Decision gate resolved 2026-09-23. Planning reference: [implementation plan v0.2](MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md), covering Phases 1 and 2. Slices 1–10 are complete and accepted; Phase 2 Slice 11 adds the approved REST adapter; Slice 12 adds Angular search; Slice 13 adds item detail; Slices 14–17 have not started. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
 
 ## Pinned decisions
 
@@ -56,7 +56,7 @@ Flyway 12.4.0 is active in Slice 2 and owns all schema changes. Slice 4 activate
 
 PostgreSQL integration tests must use Testcontainers and fail if Docker is unavailable; no silent skipping. The existing context test now also runs Flyway against its isolated PostgreSQL container before verifying health and JDBC connectivity. The MCP server must remain private. Real-host validation was completed in Slice 9 with a local Ollama-backed host (opencode 1.18.23); a Claude Code installation would additionally need its own account credentials.
 
-The PRD's complete Phase 1 startup acceptance (schema, seed, MCP tools) is now met by the two registered catalog tools, Slice 7 proved the whole path end to end, Slice 8 validated the running server with MCP Inspector, and Slice 9 completed real-host validation with a local Ollama-backed host. `backend/` follows the implementation plan and explicit task, replacing the PRD's illustrative `server-java/` layout. Slices 1–10 are implemented and Phase 1 is complete at the [Slice 10 acceptance boundary](SLICE_10_VALIDATION.md); Phase 2 follows v0.2; Slice 11 adds REST, Slice 12 adds Angular search, and Slices 13–17 remain unstarted.
+The PRD's complete Phase 1 startup acceptance (schema, seed, MCP tools) is now met by the two registered catalog tools, Slice 7 proved the whole path end to end, Slice 8 validated the running server with MCP Inspector, and Slice 9 completed real-host validation with a local Ollama-backed host. `backend/` follows the implementation plan and explicit task, replacing the PRD's illustrative `server-java/` layout. Slices 1–10 are implemented and Phase 1 is complete at the [Slice 10 acceptance boundary](SLICE_10_VALIDATION.md); Phase 2 follows v0.2; Slice 11 adds REST, Slice 12 adds Angular search, Slice 13 adds detail, and Slices 14–17 remain unstarted.
 
 ## Slice 2 persistence decisions
 
@@ -235,7 +235,7 @@ for loading/results/errors. It maps form inputs without catalog validation, canc
 superseded requests and clears stale results on loading/failure. Blank controls are
 omitted; price text retains its scale. Page navigation uses response metadata and
 retains submitted filters, independent of unsubmitted edits. New searches omit page.
-No router, forms NgModule, detail route, custom domain engine or AI integration is added.
+At the Slice 12 boundary no router, forms NgModule, detail route, custom domain engine or AI integration was added; Slice 13 adds routing/detail below.
 
 The frontend Docker build uses npm ci and the production Angular build. The nginx
 runtime listens on container port 8080, publishes only 127.0.0.1:4200 by default, and
@@ -251,3 +251,100 @@ regression gate retains 232 passing tests. Version lock also pins TypeScript 6.0
 RxJS 7.8.2, tslib 2.8.1, Vitest/browser provider 4.1.11, jsdom 28.1.0 and Playwright 1.63.0.
 The matching explicit Vitest browser provider avoids an npm 10 optional-peer resolution
 failure; no legacy-peer-deps, force flag or overrides are used.
+
+
+## Slice 13 Angular detail
+
+Angular Router 22.2.0 is the only added dependency and matches the approved core version;
+all prior lockfile package versions remain unchanged. App is now the shared header/main/
+footer shell. CatalogSearchComponent contains the existing search UI and its retained
+16 tests. Routes are `/` for search and `/catalog/:id` for CatalogDetailComponent;
+unknown frontend paths return to search. The existing nginx SPA fallback supports direct
+URLs/refresh without any Docker or proxy changes.
+
+CatalogApi.detail forwards the route ID as an encoded path segment to the existing
+relative GET /api/v1/catalog/{id}; it does not parse large IDs into imprecise JavaScript
+numbers or duplicate server validation. Detail shows all nine fields, formats timestamps
+explicitly as UTC and displays price without inventing a currency. Signals represent
+loading, item, not-found and error states. New route IDs cancel prior requests and clear
+stale detail. Error handling distinguishes 404, safe 400, network/upstream unavailability
+and generic failures; diagnostic bodies are not exposed. Retry and return navigation
+remain available as appropriate; inactive items are never filtered out locally.
+
+CatalogSearchState is a small in-memory navigation snapshot: last submitted filters,
+last page request and draft form values. It retains no catalog records, performs no
+validation and persists nothing to browser storage. Returning re-fetches the previous
+page through REST and restores form edits separately from submitted filters. Full reloads
+clear this snapshot and back-to-catalog then performs the normal default search. No
+custom route-reuse strategy or general state-management framework was introduced.
+
+Backend code, REST/MCP contracts, service semantics, migrations, Docker architecture,
+nginx/dev proxy and security defaults remain unchanged. No Slice 14 work is included.
+
+## Slice 14 local Ollama catalog assistant (D4–D7 and backend D9 approved)
+
+**D4 — invocation path (approved):** the assistant uses **in-process Spring AI tool calling**,
+not an internal MCP client. The existing `search_catalog` capability adapter
+(`mcp.tools.SearchCatalogTool`) supplies the tool definition and ultimately delegates to
+`CatalogService`, so service validation and bounds remain the only authority. No `/mcp`
+self-connection, no new MCP tool and no MCP contract change. Tool execution is deliberately
+resolved from the adapter object rather than published as a `ToolCallback` bean, because
+MCP's `ToolCallbackConverterAutoConfiguration` collects every `ToolCallback` bean and would
+otherwise register a second, un-sanitized `search_catalog`.
+
+**D5 — workflow contract and limits (approved):** `POST /api/v1/catalog/assistant` is a new
+endpoint; the accepted `/api/v1/catalog` search and detail endpoints are untouched. Request
+`{"prompt": "..."}` (required, trimmed, non-blank, at most 1000 characters; 400 otherwise).
+Response `{answer, capability, arguments, items, page, pageSize, totalItems, totalPages,
+provider, model}` where `items` and the page metadata come from the capability result, not
+from the model, and `arguments` are the arguments actually used. `answer` is the model's
+summary of that result only. Chain-of-thought, prompts, stack traces, provider diagnostics
+and secrets are never returned. Exactly one capability invocation per request: a custom
+`ToolCallingManager` sets `maxTotalToolCalls(1)` with `onLimitExceeded(THROW)`. There is no
+model or tool retry. Tool-execution failures for `InvalidCatalogCriteriaException` are
+rethrown so model-generated arguments that violate service rules produce the same 400 and
+message as the REST search endpoint. Unsupported/non-catalog intent (no capability
+invocation) returns 400 "This endpoint only supports catalog search requests." Provider
+unavailability is a sanitized 503, a bounded provider timeout (default 60 s, externalized)
+a sanitized 504, and anything unexpected a sanitized 500.
+
+**D6 — local model and data path (approved):** `qwen3-coder-next:latest` is the Slice 14
+model: already installed, advertises tool capability, and demonstrated real native
+`tool_calls` in Slice 9, whereas `qwen2.5-coder:14b` returned arguments as plain text.
+Ollama stays outside Compose; the backend reaches the host through
+`OLLAMA_BASE_URL` (`http://127.0.0.1:11434` on the host, `http://host.docker.internal:11434`
+in Compose) with the minimal Linux `extra_hosts: host.docker.internal:host-gateway`
+mapping. No Ollama Compose service and no change to backend/PostgreSQL host publication.
+Local mode talks only to local Ollama and the existing local application/database path; no
+hosted provider call or credential is involved.
+
+**D7 — provider configuration and startup (approved):** `spring-ai-starter-model-ollama`
+2.0.1 is added from the existing Spring AI BOM with no version upgrade. Application-level
+`catalog.ai.enabled` / `catalog.ai.provider` / `catalog.ai.timeout` select the workflow,
+while the starter's `spring.ai.ollama.*` properties configure the connection and model;
+both are environment-backed (`AI_ENABLED`, `AI_PROVIDER`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL`,
+`AI_TIMEOUT`). The assistant service and chat client exist only when the assistant is
+enabled **and** the provider is `ollama`, so REST, MCP and catalog behavior start and work
+with Ollama absent and never contact it during startup (`spring.ai.ollama.init.pull-model-strategy:
+never`); a disabled or unknown provider yields a safe 503 from the assistant endpoint only.
+No hosted provider is implemented and no automatic fallback exists; Slice 15 owns
+multi-provider selection.
+
+This keeps provider orchestration outside catalog business logic, MCP transport and
+persistence: the `ai` package depends on the capability adapter and `CatalogService` only,
+and no MCP, REST or migration behavior changes.
+
+Implementation notes. The tool is the existing `SearchCatalogTool` adapter, passed through
+the non-deprecated `ChatClient … .tools(adapter)` API: Spring AI 2.0.1 deprecates every
+`ToolCallback`-based ChatClient method for removal, so the single invocation is observed by
+a recording `ToolCallingManager` rather than a `ToolCallback` decorator, and no
+`ToolCallback` bean is published (MCP's converter would otherwise register a second,
+un-sanitized `search_catalog`). Each request builds its own chat client so the one-call
+bound and the recording stay request-scoped; supplying our own `ToolCallingAdvisor` makes
+Spring AI skip its automatic one. `InvalidCatalogCriteriaException` is rethrown by the tool
+exception processor rather than fed back to the model, so invalid generated arguments yield
+the same 400 and message as REST search. `spring.ai.retry.max-attempts` is set to `0`:
+Spring AI's default retries transient provider failures up to 10 times, which both violated
+D5's no-retry rule and misreported an unreachable provider as a timeout. Live validation,
+including the local data path and PostgreSQL-grounded D9 scenario, is recorded in
+[Slice 14 validation](SLICE_14_VALIDATION.md).
