@@ -1,0 +1,63 @@
+import assert from 'node:assert/strict';
+import { chromium } from 'playwright';
+
+// Run against the real Compose stack or Angular dev proxy; no mocked requests.
+const baseURL = process.env['SMOKE_BASE_URL'] ?? 'http://127.0.0.1:4200';
+const browser = await chromium.launch({
+  executablePath: process.env['CHROME_BIN'] || undefined,
+  headless: true,
+});
+try {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1050 } });
+  const errors = [];
+  const apiURLs = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('request', request => {
+    if (request.url().includes('/api/')) apiURLs.push(request.url());
+  });
+  await page.goto(baseURL);
+  const cards = page.locator('article');
+  await cards.first().waitFor();
+  assert.equal(await cards.count(), 20);
+  assert.match(await page.locator('.pagination').innerText(), /Page 1 of 2/);
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await page.getByText('Page 2 of 2', { exact: false }).waitFor();
+  assert.equal(await cards.count(), 4);
+  await page.getByRole('button', { name: 'Previous', exact: true }).click();
+  await page.getByText('Page 1 of 2', { exact: false }).waitFor();
+
+  await page.getByLabel('Item type').selectOption('SERVICE');
+  await page.getByLabel('Availability').selectOption('true');
+  await page.getByLabel('Maximum price').fill('200');
+  await page.getByRole('button', { name: 'Search catalog' }).click();
+  await page.getByText('Page 1 of 1', { exact: false }).waitFor();
+  assert.equal(await cards.count(), 6);
+  assert.deepEqual(await page.locator('.sku').allTextContents(), ['SVC-101', 'SVC-102', 'SVC-103', 'SVC-104', 'SVC-107', 'SVC-108']);
+  const response = await page.request.get(`${baseURL}/api/v1/catalog?type=SERVICE&active=true&maxPrice=200`);
+  assert.equal(response.status(), 200);
+  const result = await response.json();
+  assert.equal(result.totalItems, 6);
+  assert.deepEqual(result.items.map(item => item.id), [13, 14, 15, 16, 19, 20]);
+  console.log('Real catalog search: 6 active services <= 200; IDs 13,14,15,16,19,20.');
+
+  if (process.env['SMOKE_SCREENSHOT']) await page.screenshot({ path: process.env['SMOKE_SCREENSHOT'], fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  if (process.env['SMOKE_MOBILE_SCREENSHOT']) await page.screenshot({ path: process.env['SMOKE_MOBILE_SCREENSHOT'], fullPage: true });
+
+  await page.getByLabel('Search catalog', { exact: true }).fill('no-matching-catalog-record');
+  await page.getByRole('button', { name: 'Search catalog' }).click();
+  await page.getByRole('heading', { name: 'No items found' }).waitFor();
+  assert.equal(await cards.count(), 0);
+  await page.getByLabel('Items per page').fill('101');
+  await page.getByRole('button', { name: 'Search catalog' }).click();
+  await page.getByRole('alert').waitFor();
+  assert.match(await page.getByRole('alert').innerText(), /Page size must be between 1 and 100/);
+  assert.equal(await cards.count(), 0);
+  assert.ok(apiURLs.length >= 6);
+  assert.ok(apiURLs.every(url => new URL(url).origin === new URL(baseURL).origin));
+  assert.deepEqual(errors, []);
+  console.log('PASS: default search, page navigation, combined filters, rendering, empty state, validation, mobile layout, same-origin requests; no browser runtime errors.');
+} finally {
+  await browser.close();
+}

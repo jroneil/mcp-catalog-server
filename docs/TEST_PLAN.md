@@ -1,8 +1,8 @@
 # MCP Catalog Platform — Phases 1 and 2 test plan
 
-**Status:** Phase 1 complete (Slices 1–10); Slice 11 REST coverage added
-**Source requirements:** PRD v0.3 §16 (Testing Strategy), §12 (Startup Acceptance), §14 (Error Handling), §15 (Security); Implementation Plan v0.2, Slices 10–11
-**Scope:** Phase 1 baseline plus Slice 11 REST coverage. This document records what exists; it does not propose new tests.
+**Status:** Phase 1 complete (Slices 1–10); Slices 11–12 REST/frontend coverage added
+**Source requirements:** PRD v0.3 §16 (Testing Strategy), §12 (Startup Acceptance), §14 (Error Handling), §15 (Security); Implementation Plan v0.2, Slices 10–12
+**Scope:** Phase 1 baseline plus Slice 11 REST and Slice 12 frontend coverage. This document records what exists; it does not propose new tests.
 
 ---
 
@@ -86,7 +86,7 @@ suite.
 | MCP tool tests: registration, input schemas, valid and invalid invocation, structured responses | `SearchCatalogToolTest`, `GetCatalogItemToolTest`, `McpToolDiscoveryTest`, `McpServerWiringTest` |
 | MCP integration tests: server startup, client initialisation, tool discovery, invocation, correct data from PostgreSQL | `SearchCatalogMcpIntegrationTest`, `GetCatalogItemMcpIntegrationTest`, `PhaseOneEndToEndMcpTest`, `McpInternalFailureSanitizationTest` |
 | REST tests | Slice 11: `CatalogControllerTest`, `CatalogRestIntegrationTest`, architecture boundaries |
-| Frontend tests | Out of Phase 1 scope — no frontend exists |
+| Frontend tests | Slice 12: API mapping and search-screen tests (25); real-browser smoke through nginx and dev proxy. Detail navigation remains Slice 13. |
 | Manual compatibility tests: MCP Inspector, one real MCP host | Recorded in `SLICE_8_VALIDATION.md` (Inspector 2.7.0) and `SLICE_9_VALIDATION.md` (opencode 1.18.23 + local Ollama). Manual by nature; not part of the automated gate. Ollama/hosted-provider *application* modes are Phase 2. |
 
 ---
@@ -124,7 +124,7 @@ Documented with exact commands and outputs in the corresponding validation recor
 - Tool result schemas are asserted structurally, not against a stored JSON Schema
   document, because Spring AI 2.0.1's `ToolCallback` conversion does not expose
   `outputSchema`.
-- Frontend and AI-provider tests remain deferred to Slices 12–16; Slice 11 includes REST tests.
+- Detail navigation and AI-provider tests remain deferred to Slices 13–16; Slice 12 covers search UI and routing.
 
 
 ## 8. Slice 11 REST gate and approved architecture transition
@@ -152,3 +152,33 @@ verifies decimal scale rejection, malformed parameters/IDs, and 404 errors.
 REST preserves decimal query scale while MCP JSON can normalize trailing zeros; the
 `1.000` rejection is tested independently rather than asserting a false wire equivalence.
 No service or MCP behavior changes to force transport identity are permitted.
+
+
+## 9. Slice 12 frontend and runtime gates
+
+With approved Node 22.22.3 / npm 10.9.8:
+
+```bash
+cd frontend
+npm ci
+npm test
+npm run build
+# Full Compose stack running; requires local Chrome or installed Playwright Chromium.
+CHROME_BIN=/usr/bin/google-chrome npm run smoke
+```
+
+| Suite | Cases | Coverage |
+| --- | ---: | --- |
+| catalog-api.spec.ts | 9 | Relative GET, each filter, combined request, pagination, omission and verbatim invalid inputs |
+| app.spec.ts | 16 | Default/loading, records, empty, form mapping, defaults/bounds, next/previous, new search, validation/malformed errors, backend/network failures, retry and stale-request cancellation |
+| scripts/catalog-smoke.mjs | Browser acceptance | Real seed data via nginx and dev proxy, paging, six expected active services, empty/400 states, mobile overflow and same-origin API calls |
+
+Frontend unit tests and production build pass. Full backend Maven clean verify remains
+232 tests with no failures/errors/skips. The browser check uses real REST/PostgreSQL;
+it does not mock network traffic. Test fixtures inside unit tests are not production data.
+
+Runtime gates additionally verify three healthy containers, /api passthrough, SPA
+fallback, /mcp not proxied, unchanged backend MCP origin rejection, frontend/backend
+loopback publication and private PostgreSQL. No frontend business-validation limits are
+introduced; invalid values reach the existing service and its safe error is displayed.
+See [Slice 12 validation](SLICE_12_VALIDATION.md) for exact commands and evidence.

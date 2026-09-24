@@ -1,0 +1,54 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { TestBed } from '@angular/core/testing';
+import { CatalogApi, CatalogSearch } from './catalog-api';
+
+describe('CatalogApi', () => {
+  let api: CatalogApi;
+  let http: HttpTestingController;
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+    api = TestBed.inject(CatalogApi);
+    http = TestBed.inject(HttpTestingController);
+  });
+  afterEach(() => http.verify());
+
+  it('uses a relative GET and leaves all defaults to the server', () => {
+    api.search().subscribe();
+    const request = http.expectOne('/api/v1/catalog');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.params.keys()).toEqual([]);
+    request.flush({ items: [], page: 0, pageSize: 20, totalItems: 0, totalPages: 0 });
+  });
+
+  it.each([
+    ['text', ' Network & support '], ['type', 'SERVICE'], ['active', false],
+    ['maxPrice', '1.000'], ['page', 2], ['pageSize', 5],
+  ])('maps %s without coercing or dropping values', (key, value) => {
+    api.search({ [key]: value } as CatalogSearch).subscribe();
+    const request = http.expectOne(req => req.url === '/api/v1/catalog');
+    expect(request.request.params.keys()).toEqual([key]);
+    expect(request.request.params.get(key as string)).toBe(String(value));
+    request.flush({});
+  });
+
+  it('maps combined filters and pagination', () => {
+    const criteria: CatalogSearch = { text: 'network', type: 'PRODUCT', active: true, maxPrice: '200', page: 1, pageSize: 3 };
+    api.search(criteria).subscribe();
+    const request = http.expectOne(req => req.url === '/api/v1/catalog');
+    expect(request.request.params.keys()).toHaveLength(6);
+    for (const [key, value] of Object.entries(criteria)) expect(request.request.params.get(key)).toBe(String(value));
+    request.flush({});
+  });
+
+  it('passes invalid criteria to server validation and omits only undefined fields', () => {
+    api.search({ page: -1, pageSize: '101', maxPrice: '-1', text: 'a'.repeat(201), type: undefined }).subscribe();
+    const request = http.expectOne(req => req.url === '/api/v1/catalog');
+    expect(request.request.params.get('page')).toBe('-1');
+    expect(request.request.params.get('pageSize')).toBe('101');
+    expect(request.request.params.get('maxPrice')).toBe('-1');
+    expect(request.request.params.get('text')).toHaveLength(201);
+    expect(request.request.params.has('type')).toBe(false);
+    request.flush({});
+  });
+});

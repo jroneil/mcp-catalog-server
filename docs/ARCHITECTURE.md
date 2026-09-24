@@ -1,6 +1,6 @@
 # MCP Catalog Platform architecture
 
-Decision gate resolved 2026-09-23. Planning reference: [implementation plan v0.2](MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md), covering Phases 1 and 2. Slices 1–10 are complete and accepted; Phase 2 Slice 11 adds the approved REST adapter; Slices 12–17 have not started. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
+Decision gate resolved 2026-09-23. Planning reference: [implementation plan v0.2](MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md), covering Phases 1 and 2. Slices 1–10 are complete and accepted; Phase 2 Slice 11 adds the approved REST adapter; Slice 12 adds Angular search; Slices 13–17 have not started. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
 
 ## Pinned decisions
 
@@ -56,7 +56,7 @@ Flyway 12.4.0 is active in Slice 2 and owns all schema changes. Slice 4 activate
 
 PostgreSQL integration tests must use Testcontainers and fail if Docker is unavailable; no silent skipping. The existing context test now also runs Flyway against its isolated PostgreSQL container before verifying health and JDBC connectivity. The MCP server must remain private. Real-host validation was completed in Slice 9 with a local Ollama-backed host (opencode 1.18.23); a Claude Code installation would additionally need its own account credentials.
 
-The PRD's complete Phase 1 startup acceptance (schema, seed, MCP tools) is now met by the two registered catalog tools, Slice 7 proved the whole path end to end, Slice 8 validated the running server with MCP Inspector, and Slice 9 completed real-host validation with a local Ollama-backed host. `backend/` follows the implementation plan and explicit task, replacing the PRD's illustrative `server-java/` layout. Slices 1–10 are implemented and Phase 1 is complete at the [Slice 10 acceptance boundary](SLICE_10_VALIDATION.md); Phase 2 follows v0.2; Slice 11 adds REST and later slices remain unstarted.
+The PRD's complete Phase 1 startup acceptance (schema, seed, MCP tools) is now met by the two registered catalog tools, Slice 7 proved the whole path end to end, Slice 8 validated the running server with MCP Inspector, and Slice 9 completed real-host validation with a local Ollama-backed host. `backend/` follows the implementation plan and explicit task, replacing the PRD's illustrative `server-java/` layout. Slices 1–10 are implemented and Phase 1 is complete at the [Slice 10 acceptance boundary](SLICE_10_VALIDATION.md); Phase 2 follows v0.2; Slice 11 adds REST, Slice 12 adds Angular search, and Slices 13–17 remain unstarted.
 
 ## Slice 2 persistence decisions
 
@@ -198,3 +198,56 @@ catalog application/persistence dependencies on REST/web/servlet types. Existing
 boundary tests and all other Phase 1 tests remain. Delegation tests additionally verify
 that optional and invalid service inputs are passed unchanged. No CORS, authentication,
 provider wiring, frontend, dependency upgrades or network configuration changes are added.
+
+
+## Slice 12 frontend decision gate (D3 resolved)
+
+User-approved standalone Angular 22.x frontend, signals for local UI state, npm with
+package-lock.json and npm ci. Registry verification on 2026-09-23 resolves Angular
+core/compiler 22.2.0 and stable CLI/build 22.1.8 (major 22, compatible peer ranges).
+Both accept Node 22.22.3. Pin Node 22.22.3 and its bundled npm 10.9.8; no prereleases,
+NgModules, alternative package managers, or Java dependency changes are required.
+The production build image is node:22.22.3-bookworm-slim; nginx:1.30.5-alpine3.24
+serves static assets with SPA fallback and proxies only /api/ to
+http://mcp-catalog-server:8080. The existing backend service name is retained.
+
+Browser -> same-origin /api/v1/catalog -> REST adapter -> CatalogService -> PostgreSQL.
+Local Angular development binds 127.0.0.1:4200 and proxies /api to
+http://127.0.0.1:8080. Container frontend publication is 127.0.0.1:4200 by default;
+backend loopback publication and unpublished PostgreSQL remain unchanged. Angular
+components/services use relative API URLs only. No CORS configuration, /mcp proxy,
+MCP security change, secret or AI-provider setting is introduced.
+
+Angular owns interaction/presentation only. It sends optional criteria and displays
+server pagination metadata and safe errors. Service validation/defaulting remains
+authoritative; no catalog filtering, price rounding or replicated business bounds.
+
+Version evidence: npm registry metadata for @angular/core@22.2.0,
+@angular/cli@22.1.8 and @angular/build@22.1.8; [Angular compatibility](https://angular.dev/reference/versions);
+[official nginx image tags](https://github.com/docker-library/official-images/blob/master/library/nginx).
+
+
+### Slice 12 implementation and validation
+
+`frontend/src/app/catalog-api.ts` contains the accepted REST wire interfaces and a
+relative-URL HttpClient search method. `App` is a standalone component with signals
+for loading/results/errors. It maps form inputs without catalog validation, cancels
+superseded requests and clears stale results on loading/failure. Blank controls are
+omitted; price text retains its scale. Page navigation uses response metadata and
+retains submitted filters, independent of unsubmitted edits. New searches omit page.
+No router, forms NgModule, detail route, custom domain engine or AI integration is added.
+
+The frontend Docker build uses npm ci and the production Angular build. The nginx
+runtime listens on container port 8080, publishes only 127.0.0.1:4200 by default, and
+has a static-page health check. Compose waits for the existing healthy backend before
+starting frontend. `/api/` is proxied without rewriting the accepted URI; SPA fallback
+serves index.html for client paths. `/mcp` and its subpaths explicitly return 404.
+The frontend check confirms static serving; backend readiness separately confirms
+PostgreSQL connectivity. No existing backend/network setting or dependency changed.
+
+25 frontend tests cover mapping/UI state; the browser smoke script exercises the real
+nginx and development proxy paths with the seeded PostgreSQL catalog. The full backend
+regression gate retains 232 passing tests. Version lock also pins TypeScript 6.0.3,
+RxJS 7.8.2, tslib 2.8.1, Vitest/browser provider 4.1.11, jsdom 28.1.0 and Playwright 1.63.0.
+The matching explicit Vitest browser provider avoids an npm 10 optional-peer resolution
+failure; no legacy-peer-deps, force flag or overrides are used.

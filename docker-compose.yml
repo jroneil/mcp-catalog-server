@@ -29,5 +29,15 @@ services:
       postgres:
         condition: service_healthy
 
+  frontend:
+    build:
+      context: ./frontend
+    image: mcp-catalog-frontend:0.1.0
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-4200}:8080"
+    depends_on:
+      mcp-catalog-server:
+        condition: service_healthy
+
 volumes:
   postgres-data:

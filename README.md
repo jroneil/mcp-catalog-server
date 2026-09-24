@@ -1,6 +1,6 @@
 # MCP Catalog Platform
 
-Slices 1–10 (Phase 1 complete): Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence, Actuator health, and a Streamable HTTP MCP server exposing the `search_catalog` and `get_catalog_item` tools with request-origin protection. Slice 11 adds read-only REST catalog search and detail through the same CatalogService as MCP. Phase 2 follows implementation plan v0.2; Slices 12–17 have not started. License: TBD before public distribution.
+Slices 1–10 (Phase 1 complete): Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence, Actuator health, and a Streamable HTTP MCP server exposing the `search_catalog` and `get_catalog_item` tools with request-origin protection. Slice 11 adds read-only REST catalog search and detail through the same CatalogService as MCP. Phase 2 follows implementation plan v0.2; Slice 12 adds the Angular search UI; Slices 13–17 have not started. License: TBD before public distribution.
 
 ## Start locally
 
@@ -18,6 +18,8 @@ curl --fail http://127.0.0.1:8080/actuator/health/readiness
 docker compose port mcp-catalog-server 8080
 ```
 
+Open **http://127.0.0.1:4200** for the catalog search UI. The frontend is served by nginx with same-origin REST proxying. `FRONTEND_PORT` can change the host port while retaining loopback binding.
+
 Both health endpoints report `"status":"UP"` (the aggregate endpoint also lists health groups) after PostgreSQL is usable. The port command must show `127.0.0.1:8080` (or your `BACKEND_PORT`). PostgreSQL is private to the Compose network; backend publication is loopback-only. The container's internal wildcard listener supports Docker forwarding and does not change host binding. Phase 1 is local development, not production-hardened.
 
 `docker compose up --build` also works after configuring `.env`; it attaches logs. Stop with `docker compose down`; the database volume is retained. Changing PostgreSQL credentials in `.env` does not change an already initialized database. For disposable local data only, `docker compose down --volumes` deletes the database and permits fresh initialization.
@@ -31,11 +33,11 @@ mvn -f backend/pom.xml --batch-mode --no-transfer-progress clean verify
 docker build -t mcp-catalog-server:0.1.0 backend
 ```
 
-The context test provisions its own PostgreSQL 18.6 container and verifies JDBC plus HTTP health/readiness; it needs no `.env` and never uses H2. Docker image builds compile/package but skip test execution; run the Maven gate separately. Flyway creates and seeds the catalog table. Additional PostgreSQL tests verify migrations, repository mappings, database constraints and failure of application startup on an invalid migration. The Slice 4 suites start the real MCP server on a random port and verify server identity, advertised capabilities, the `/mcp` route, Origin/Host rejection and tool discovery. The Slice 5 and 6 suites verify both tool contracts, mapping, validation and error behavior, and drive the production tools with a real MCP client against the seeded catalog. Slice 7 adds an end-to-end acceptance suite over the whole MCP path, architecture-boundary checks and failure-path sanitization coverage. The full gate currently runs 184 tests with no failures.
+The context test provisions its own PostgreSQL 18.6 container and verifies JDBC plus HTTP health/readiness; it needs no `.env` and never uses H2. Docker image builds compile/package but skip test execution; run the Maven gate separately. Flyway creates and seeds the catalog table. Additional PostgreSQL tests verify migrations, repository mappings, database constraints and failure of application startup on an invalid migration. The Slice 4 suites start the real MCP server on a random port and verify server identity, advertised capabilities, the `/mcp` route, Origin/Host rejection and tool discovery. The Slice 5 and 6 suites verify both tool contracts, mapping, validation and error behavior, and drive the production tools with a real MCP client against the seeded catalog. Slice 7 adds an end-to-end acceptance suite over the whole MCP path, architecture-boundary checks and failure-path sanitization coverage. The backend gate currently runs **232 tests** with no failures, including Slice 11 REST and REST/MCP equivalence coverage. Slice 12 adds **25 frontend tests** and a real-browser smoke check.
 
 For host execution, supply `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` for a reachable PostgreSQL instance, then run `mvn -f backend/pom.xml spring-boot:run`. Host execution binds `127.0.0.1:8080` by default; `.env` is read by Compose, not automatically by Spring Boot. Compose deliberately does not publish PostgreSQL.
 
-See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan v0.2](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md). The MCP endpoint is `/mcp` (synchronous Streamable HTTP) and exposes `search_catalog` and `get_catalog_item`; see the MCP section below. Slice 10 (the Phase 1 acceptance audit) is complete — see [Slice 10 validation](docs/SLICE_10_VALIDATION.md); Slice 11 adds the REST adapter; see [Slice 11 validation](docs/SLICE_11_VALIDATION.md). Slices 12–17 have not started.
+See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan v0.2](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md). The MCP endpoint is `/mcp` (synchronous Streamable HTTP) and exposes `search_catalog` and `get_catalog_item`; see the MCP section below. Slice 10 (the Phase 1 acceptance audit) is complete — see [Slice 10 validation](docs/SLICE_10_VALIDATION.md); Slice 11 adds the REST adapter; see [Slice 11 validation](docs/SLICE_11_VALIDATION.md). Slice 12 adds the Angular search UI; Slices 13–17 have not started.
 
 ## MCP server and tools (Slices 4–9)
 
@@ -195,7 +197,7 @@ for the full evidence and caveats.
 
 ## Catalog database (Slice 2)
 
-On startup, Flyway 12.4.0 applies `V1__create_catalog_item.sql` and `V2__seed_catalog_items.sql` to `public`. There are 24 seeded records: 12 products, 12 services, 18 active and 6 inactive. The persistence package uses Spring Data JDBC with read-only ID/SKU lookup and count. There is no catalog HTTP endpoint yet; application lookup behavior goes through CatalogService.
+On startup, Flyway 12.4.0 applies `V1__create_catalog_item.sql` and `V2__seed_catalog_items.sql` to `public`. There are 24 seeded records: 12 products, 12 services, 18 active and 6 inactive. The persistence package uses Spring Data JDBC with read-only ID/SKU lookup and count. Read-only search and detail are available at `/api/v1/catalog` and `/api/v1/catalog/{id}`; both REST and MCP use CatalogService.
 
 Inspect through the private PostgreSQL container:
 
@@ -247,3 +249,38 @@ HTTP parameter parsing uses Spring MVC's existing scalar binding. Business valid
 stays in CatalogService. Decimal query text retains its scale (`maxPrice=1.000` is
 rejected); the MCP JSON transport may normalize trailing zeros before service validation.
 No frontend, CORS configuration or AI-provider integration is included in Slice 11.
+
+
+## Angular catalog search (Slice 12)
+
+The UI offers text, type, active/inactive and maximum-price filters, optional page size,
+readable catalog cards and bounded page navigation. Loading, empty, validation and
+backend-unavailable states are distinct. The server owns catalog rules and defaults;
+blank controls are omitted and decimal text is not rounded by Angular.
+
+Approved toolchain: Angular core 22.2.0, CLI/build 22.1.8, Node 22.22.3, npm 10.9.8.
+Use the checked-in package-lock.json:
+
+```bash
+cd frontend
+npm ci
+npm test
+npm run build
+npm start
+```
+
+`npm start` listens on `127.0.0.1:4200` and proxies `/api` to `127.0.0.1:8080`.
+If the Compose frontend occupies port 4200, stop only that service first:
+`docker compose stop frontend`. Stop the dev server before restoring the container with
+`docker compose up -d --wait frontend`. Both use relative `/api/v1/catalog` requests.
+Container production assets are served by nginx 1.30.5-alpine3.24; it proxies `/api/`
+to the backend on the Compose network. No CORS configuration is needed or added.
+The frontend does not proxy `/mcp`; backend MCP access and its Origin/Host checks remain unchanged.
+
+With the full stack running, run `CHROME_BIN=/usr/bin/google-chrome npm run smoke`
+from `frontend/` for the real-browser acceptance check; alternatively install the
+Playwright browser with `npx playwright install chromium` and run `npm run smoke`.
+See [frontend instructions](frontend/README.md) and [Slice 12 validation](docs/SLICE_12_VALIDATION.md).
+
+Slice 12 does not include a detail page, AI UI/providers, writes/admin, authentication,
+or Phase 3 functionality. The existing REST detail endpoint remains available.

@@ -1,0 +1,7 @@
+:root { color-scheme: light; font-family: Inter, "Segoe UI", Arial, sans-serif; color: #20322e; background: #f5f6f2; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input, select { font: inherit; }
+button, select { cursor: pointer; }
+button:disabled { cursor: default; }
+:focus-visible { outline: 3px solid #b76c15; outline-offset: 3px; }

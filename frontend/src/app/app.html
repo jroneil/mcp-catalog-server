@@ -1,0 +1,59 @@
+<header class="masthead">
+  <div class="brand"><span class="brand-mark" aria-hidden="true">C</span> Catalog</div>
+  <span class="header-note">Products &amp; services</span>
+</header>
+<main>
+  <section class="intro" aria-labelledby="catalog-title">
+    <p class="eyebrow">Explore the catalog</p>
+    <h1 id="catalog-title">Find what your business needs.</h1>
+    <p>Browse products and professional services. Refine your search to find the right fit.</p>
+  </section>
+
+  <form (submit)="search($event)" aria-label="Catalog search" novalidate>
+    <div class="search-field">
+      <label for="text">Search catalog</label>
+      <input id="text" name="text" type="search" placeholder="Search by name, SKU or description">
+    </div>
+    <div class="filters">
+      <div><label for="type">Item type</label><select id="type" name="type">
+        <option value="">All types</option><option value="PRODUCT">Products</option><option value="SERVICE">Services</option>
+      </select></div>
+      <div><label for="active">Availability</label><select id="active" name="active">
+        <option value="">Active &amp; inactive</option><option value="true">Active only</option><option value="false">Inactive only</option>
+      </select></div>
+      <div><label for="maxPrice">Maximum price</label><input id="maxPrice" name="maxPrice" inputmode="decimal" placeholder="No maximum"></div>
+      <div><label for="pageSize">Items per page</label><input id="pageSize" name="pageSize" inputmode="numeric" placeholder="Default"></div>
+      <button class="primary" type="submit">Search catalog <span aria-hidden="true">→</span></button>
+    </div>
+  </form>
+
+  <section class="results" aria-label="Catalog results" [attr.aria-busy]="loading()">
+    @if (loading()) {
+      <div class="state" role="status"><span class="spinner" aria-hidden="true"></span><h2>Loading catalog…</h2><p>Finding your products and services.</p></div>
+    }
+    @if (error(); as message) {
+      <div class="state error" role="alert"><h2>Search could not be completed</h2><p>{{ message }}</p><button type="button" (click)="retry()">Try again</button></div>
+    }
+    @if (result(); as page) {
+      <div class="results-heading"><h2>Catalog results <span class="count">{{ page.totalItems }}</span></h2><span>Catalog order</span></div>
+      @if (page.items.length === 0) {
+        <div class="state" role="status"><h3>No items found</h3><p>Try a different search or adjust your filters.</p></div>
+      } @else {
+        <div class="catalog-grid">
+          @for (item of page.items; track item.id) {
+            <article class="catalog-card" [attr.aria-label]="item.name">
+              <div class="card-top"><span class="item-type">{{ item.type === 'PRODUCT' ? 'Product' : 'Service' }}</span><span class="status" [class.inactive]="!item.active">{{ item.active ? 'Active' : 'Inactive' }}</span></div>
+              <h3>{{ item.name }}</h3><p class="description">{{ item.description }}</p>
+              <div class="card-bottom"><span class="sku">{{ item.sku }}</span><span class="price"><span class="price-label">Price</span>{{ item.price | number:'1.2-2' }}</span></div>
+            </article>
+          }
+        </div>
+      }
+      <nav class="pagination" aria-label="Catalog pages">
+        <span>{{ page.totalPages === 0 ? 'No pages' : 'Page ' + (page.page + 1) + ' of ' + page.totalPages }} · {{ page.pageSize }} items per page</span>
+        <div><button type="button" (click)="navigate(-1)" [disabled]="page.page === 0 || page.totalPages === 0">Previous</button><button type="button" (click)="navigate(1)" [disabled]="page.page + 1 >= page.totalPages">Next</button></div>
+      </nav>
+    }
+  </section>
+  <footer>Catalog directory <span>Products and services, in one place.</span></footer>
+</main>

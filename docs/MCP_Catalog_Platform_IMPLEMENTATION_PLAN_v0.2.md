@@ -1,6 +1,6 @@
 # MCP Catalog Platform — Phases 1 and 2 Implementation Plan
 
-**Status:** Phase 1 accepted; Phase 2 in progress: Slice 11 complete; Slices 12–17 not started  
+**Status:** Phase 1 accepted; Phase 2 in progress: Slice 11 complete; Slice 12 complete; Slices 13–17 not started
 **Version:** 0.2  
 **Date:** 2026-09-23  
 **Source PRD:** `MCP_Catalog_Platform_PRD_v0.3.md`  
@@ -12,11 +12,11 @@
 
 [Implementation plan v0.1](MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.1.md) remains unchanged as the historical Phase 1 plan. Slices 1–10 below are reproduced verbatim and are completed historical slices, not reopened work. Their original checklist boxes and prospective wording are retained as historical requirements; [Slice 10 validation](SLICE_10_VALIDATION.md) is the authoritative Phase 1 completion/acceptance boundary (184 tests passed). Historical Phase 1 prohibitions and stop conditions apply to Phase 1 only.
 
-The Phase 2 plan and decision gates begin in section 8. The user subsequently approved D1 and authorized Slice 11 only. Decisions explicitly marked open remain unresolved; Slices 12–17 are not authorized by Slice 11. No commits are authorized by this task.
+The Phase 2 plan and decision gates begin in section 8. The user subsequently approved D1 and completed Slice 11, then approved D3 and authorized Slice 12 only. Decisions explicitly marked open remain unresolved; Slices 13–17 have not started. No commits are authorized for Slice 12.
 
 ## 1. Purpose
 
-This revision preserves the completed Phase 1 plan and adds the approved Phase 2 slice decomposition derived from PRD v0.3. Slice 11 is complete; later slices have not started. See [Slice 11 validation](SLICE_11_VALIDATION.md).
+This revision preserves the completed Phase 1 plan and adds the approved Phase 2 slice decomposition derived from PRD v0.3. Slices 11–12 are complete; later slices have not started. See [Slice 12 validation](SLICE_12_VALIDATION.md). See [Slice 11 validation](SLICE_11_VALIDATION.md).
 
 The plan is intentionally narrow.
 
@@ -815,7 +815,7 @@ Phase 2 derives from PRD FR-7–FR-13A and supporting §§9–16, 19, 21–23. I
 | Slice | Title | Status |
 | --- | --- | --- |
 | 11 | Read-only catalog REST adapter | Complete; see Slice 11 validation |
-| 12 | Angular catalog search and Docker integration | Planned |
+| 12 | Angular catalog search and Docker integration | Complete; see Slice 12 validation |
 | 13 | Angular catalog item detail | Planned |
 | 14 | Local Ollama catalog workflow — backend | Planned; AI decisions pending |
 | 15 | Hosted provider and configuration-based selection | Planned; provider decisions pending |
@@ -847,7 +847,7 @@ The slice decomposition is approved. The decisions below distinguish approval of
 | --- | --- | --- |
 | D1 — REST contract | Slice 11 | Approved by the user for Slice 11: exact contract below; preserve CatalogService semantics. |
 | D2 — REST test transition | Slice 11 | Approved policy below; apply the enduring architecture-boundary coverage in Slice 11. |
-| D3 — Frontend toolchain and routing | Slice 12 | Open: exact compatible Angular/Node/tooling versions, package manager/lockfile, frontend port, and same-origin container routing/development proxy. Prefer PRD FR-13A's same-origin approach; any cross-origin alternative needs an explicit allowlist. |
+| D3 — Frontend toolchain and routing | Slice 12 | Resolved by user approval: Angular 22.x stable (npm resolves core 22.2.0), matching CLI major (stable 22.1.8), Node 22.22.3, npm 10.9.8 with package-lock.json and npm ci; local port 4200, same-origin nginx and development proxy. See D3 details below and ARCHITECTURE. |
 | D4 — AI capability invocation | Slice 14 | Open: in-process model tool adapter calling CatalogService versus internal MCP connection. FR-13 does not specify the mechanism; FR-17 places a standalone Java MCP client in Phase 3. Resolve the application path without assuming a Phase 3 deliverable. |
 | D5 — AI workflow contract and limits | Slice 14 | Open: exact single catalog workflow, request/result format, backend endpoint, unsupported-intent behavior, execution limits/timeouts and UI presentation contract. Do not expand into general chat. |
 | D6 — Local model and data path | Slice 14 | Open: primary Ollama model and available installation; model tool-call capability; container-to-host connectivity; evidence demonstrating no required hosted transmission of catalog/business prompt data. Prior external-host model success is not sufficient evidence for this application path. |
@@ -877,6 +877,16 @@ Document the test-name/assertion transition explicitly in Slice 11 validation. A
 - Errors contain exactly `status`, `error`, `message`, `path`; no stack traces, exception classes, SQL, secrets or implementation diagnostics. HTTP binding may reject malformed values before service invocation. No duplicated service validation or MCP DTO dependency.
 
 FR-8 fixes the base path and shared service; the user approved the detailed contract above. D1 and D2 are resolved for Slice 11. Later AI/frontend decisions remain deferred.
+
+### D3: approved Slice 12 frontend toolchain and routing
+
+- Angular 22.x stable, standalone components and signals for local state; no application NgModules. Current stable npm resolution is core/compiler 22.2.0, CLI/build 22.1.8 (matching major, compatible published peer ranges). No prerelease packages.
+- Node 22.22.3, npm 10.9.8, package-lock.json and npm ci for reproducible builds; no yarn/pnpm/bun or Node 24/26.
+- Development server binds 127.0.0.1:4200; Angular development proxy forwards /api to http://127.0.0.1:8080.
+- Application API URLs are relative /api/v1/catalog, with no backend hostname in components/services.
+- Production build uses node:22.22.3-bookworm-slim; static runtime uses pinned nginx:1.30.5-alpine3.24, SPA fallback and /api/ reverse proxy to the existing mcp-catalog-server:8080 Compose service.
+- Frontend publication defaults to 127.0.0.1:4200; backend publication and private PostgreSQL remain unchanged.
+- Same-origin routing needs no CORS additions. Do not proxy /mcp or alter its Origin/Host protections. No frontend secrets or AI-provider configuration.
 
 ## 10. Phase 2 PRD traceability
 
