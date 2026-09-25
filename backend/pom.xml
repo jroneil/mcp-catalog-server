@@ -82,6 +82,16 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-model-ollama</artifactId>
         </dependency>
+        <!--
+          Slice 15 (D8): OpenAI-compatible protocol client used to reach Bailian /
+          Alibaba Cloud Model Studio (DashScope). Version comes from the imported
+          spring-ai-bom; this adds no dependency upgrade. The logical application
+          provider remains "bailian".
+        -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

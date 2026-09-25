@@ -29,10 +29,17 @@ spring:
         streamable-http:
           mcp-endpoint: /mcp
     retry:
-      # D5: no automatic model retry in Slice 14. Spring AI's default retries transient
-      # provider failures up to 10 times, which would mask an unreachable provider as a
-      # timeout; zero keeps one attempt so unavailability surfaces as a sanitized 503.
+      # D5: no automatic model retry. Spring AI's default retries transient provider
+      # failures up to 10 times, which would mask an unreachable provider as a timeout;
+      # zero keeps one attempt so unavailability surfaces as a sanitized 503.
       max-attempts: 0
+    model:
+      # Slice 15 (D7): exactly one chat model may be active. This default is the
+      # local-provider value; AiProviderEnvironmentPostProcessor overrides it with
+      # 'openai' when the logical provider is bailian. No embedding model is used, and
+      # both starters' embedding auto-configurations would otherwise compete.
+      chat: ollama
+      embedding: none
     ollama:
       # D6/D7: local Ollama only. No contact is made during startup because the
       # model pull strategy is 'never', so REST/MCP/catalog work with Ollama absent.
@@ -42,6 +49,19 @@ spring:
       chat:
         # Canonical Spring AI property (`chat.options.model` is the deprecated alias).
         model: ${OLLAMA_MODEL:qwen3-coder-next:latest}
+    openai:
+      # Slice 15 (D8): OpenAI-compatible client pointed at Bailian/DashScope, never at
+      # OpenAI. The base URL is the official documented compatible-mode endpoint for the
+      # credential's region and must end with /compatible-mode/v1. An empty api-key is
+      # allowed: startup still succeeds and the assistant reports a sanitized 503.
+      base-url: ${BAILIAN_BASE_URL:https://dashscope-intl.aliyuncs.com/compatible-mode/v1}
+      api-key: ${BAILIAN_API_KEY:}
+      # The client has its own retry/timeout knobs (default 3 retries). D5/D8 forbid any
+      # automatic provider retry, and the request bound is the approved AI_TIMEOUT.
+      timeout: ${AI_TIMEOUT:60s}
+      chat:
+        model: ${BAILIAN_MODEL:qwen3.8-max}
+        max-retries: 0
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -79,8 +99,8 @@ management:
 catalog:
   ai:
     # D5/D7: bounded catalog assistant. Endpoint: POST /api/v1/catalog/assistant.
-    # Only provider "ollama" is implemented in Slice 14; any other value makes the
-    # assistant unavailable (503) without affecting REST, MCP or catalog behavior.
+    # Supported logical providers: ollama (default) and bailian. Any other value makes
+    # the assistant unavailable (503) without affecting REST, MCP or catalog behavior.
     enabled: ${AI_ENABLED:true}
     provider: ${AI_PROVIDER:ollama}
     # Bounded provider timeout; a timeout returns a sanitized 504.

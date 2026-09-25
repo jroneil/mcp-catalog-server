@@ -28,6 +28,11 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3-coder-next:latest}
       AI_TIMEOUT: ${AI_TIMEOUT:-60s}
+      # Slice 15 hosted provider. The credential is injected from the environment at run
+      # time and is never written to .env, the image or any committed file.
+      BAILIAN_API_KEY: ${BAILIAN_API_KEY:-}
+      BAILIAN_BASE_URL: ${BAILIAN_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}
+      BAILIAN_MODEL: ${BAILIAN_MODEL:-qwen3.8-max}
     # Slice 14 (D6): host reachability for a local Ollama that stays outside Compose.
     # Ollama is not published and is not added as a Compose service.
     extra_hosts:

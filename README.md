@@ -1,6 +1,6 @@
 # MCP Catalog Platform
 
-Slices 1–10 (Phase 1 complete): Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence, Actuator health, and a Streamable HTTP MCP server exposing the `search_catalog` and `get_catalog_item` tools with request-origin protection. Slice 11 adds read-only REST catalog search and detail through the same CatalogService as MCP. Phase 2 follows implementation plan v0.2; Slice 12 adds Angular search, Slice 13 adds item detail and Slice 14 adds the backend local Ollama catalog assistant; Slices 15–17 have not started. License: TBD before public distribution.
+Slices 1–10 (Phase 1 complete): Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence, Actuator health, and a Streamable HTTP MCP server exposing the `search_catalog` and `get_catalog_item` tools with request-origin protection. Slice 11 adds read-only REST catalog search and detail through the same CatalogService as MCP. Phase 2 follows implementation plan v0.2; Slice 12 adds Angular search, Slice 13 adds item detail and Slice 14 adds the backend local Ollama catalog assistant; Slice 15 hosted acceptance is on hold; Slice 16 adds the local-only Angular assistant; Slice 17 has not started. License: TBD before public distribution.
 
 ## Start locally
 
@@ -33,11 +33,11 @@ mvn -f backend/pom.xml --batch-mode --no-transfer-progress clean verify
 docker build -t mcp-catalog-server:0.1.0 backend
 ```
 
-The context test provisions its own PostgreSQL 18.6 container and verifies JDBC plus HTTP health/readiness; it needs no `.env` and never uses H2. Docker image builds compile/package but skip test execution; run the Maven gate separately. Flyway creates and seeds the catalog table. Additional PostgreSQL tests verify migrations, repository mappings, database constraints and failure of application startup on an invalid migration. The Slice 4 suites start the real MCP server on a random port and verify server identity, advertised capabilities, the `/mcp` route, Origin/Host rejection and tool discovery. The Slice 5 and 6 suites verify both tool contracts, mapping, validation and error behavior, and drive the production tools with a real MCP client against the seeded catalog. Slice 7 adds an end-to-end acceptance suite over the whole MCP path, architecture-boundary checks and failure-path sanitization coverage. The backend gate currently runs **263 tests** with no failures, including Slice 11 REST and REST/MCP equivalence coverage and Slice 14 assistant coverage. Slices 12–13 provide **40 frontend tests** and a real-browser search/detail smoke check.
+The context test provisions its own PostgreSQL 18.6 container and verifies JDBC plus HTTP health/readiness; it needs no `.env` and never uses H2. Docker image builds compile/package but skip test execution; run the Maven gate separately. Flyway creates and seeds the catalog table. Additional PostgreSQL tests verify migrations, repository mappings, database constraints and failure of application startup on an invalid migration. The Slice 4 suites start the real MCP server on a random port and verify server identity, advertised capabilities, the `/mcp` route, Origin/Host rejection and tool discovery. The Slice 5 and 6 suites verify both tool contracts, mapping, validation and error behavior, and drive the production tools with a real MCP client against the seeded catalog. Slice 7 adds an end-to-end acceptance suite over the whole MCP path, architecture-boundary checks and failure-path sanitization coverage. The backend gate currently runs **285 tests** with no failures, including the accepted REST/MCP coverage and existing assistant regressions. The frontend gate runs **59 tests**, including 19 Slice 16 assistant cases, with real-browser search/detail and local assistant smoke checks. Passing deterministic regressions does not imply hosted acceptance.
 
 For host execution, supply `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` for a reachable PostgreSQL instance, then run `mvn -f backend/pom.xml spring-boot:run`. Host execution binds `127.0.0.1:8080` by default; `.env` is read by Compose, not automatically by Spring Boot. Compose deliberately does not publish PostgreSQL.
 
-See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan v0.2](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md). The MCP endpoint is `/mcp` (synchronous Streamable HTTP) and exposes `search_catalog` and `get_catalog_item`; see the MCP section below. Slice 10 (the Phase 1 acceptance audit) is complete — see [Slice 10 validation](docs/SLICE_10_VALIDATION.md); Slice 11 adds the REST adapter; see [Slice 11 validation](docs/SLICE_11_VALIDATION.md). Slice 12 adds Angular search and Slice 13 adds item detail; Slices 14–17 have not started.
+See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan v0.2](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md). The MCP endpoint is `/mcp` (synchronous Streamable HTTP) and exposes `search_catalog` and `get_catalog_item`; see the MCP section below. Slice 10 (the Phase 1 acceptance audit) is complete — see [Slice 10 validation](docs/SLICE_10_VALIDATION.md); Slice 11 adds the REST adapter; see [Slice 11 validation](docs/SLICE_11_VALIDATION.md). Slice 12 adds Angular search and Slice 13 adds item detail; Slice 14 is accepted, Slice 15 hosted acceptance is on hold, Slice 16 adds the local assistant UI and Slice 17 has not started.
 
 ## MCP server and tools (Slices 4–9)
 
@@ -282,8 +282,8 @@ from `frontend/` for the real-browser acceptance check; alternatively install th
 Playwright browser with `npx playwright install chromium` and run `npm run smoke`.
 See [frontend instructions](frontend/README.md) and [Slice 12 validation](docs/SLICE_12_VALIDATION.md).
 
-Slice 13 adds item detail below. AI UI/providers, writes/admin, authentication and
-Phase 3 functionality remain excluded.
+Slice 13 adds item detail below; Slice 16 adds the local assistant UI. Writes/admin,
+authentication and Phase 3 functionality remain excluded.
 
 
 ## Catalog item detail (Slice 13)
@@ -360,3 +360,31 @@ timeout, 500 internal) and never include provider diagnostics, prompts or stack 
 
 There is no AI user interface in Slice 14 — Angular AI interaction is Slice 16 and the
 hosted provider is Slice 15. See [Slice 14 validation](docs/SLICE_14_VALIDATION.md).
+
+## Ask the catalog (Slice 16, local-only)
+
+On the catalog page, use **Ask the catalog** below the conventional search results.
+Enter “Show me active service items under $200.” and select **Find catalog items**.
+The panel displays the backend answer and matching catalog records with detail links.
+Loading and safe errors are shown; correct a validation/unsupported request or use
+**Retry catalog request** for transient failures. A new submission replaces the old
+result. This is one catalog interaction, without chat history or provider controls.
+
+Run the accepted local configuration (Ollama remains outside Compose):
+
+```bash
+AI_PROVIDER=ollama OLLAMA_MODEL=qwen3-coder-next:latest docker compose up --build --wait --wait-timeout 300
+cd frontend
+CHROME_BIN=/usr/bin/google-chrome node scripts/catalog-assistant-smoke.mjs
+```
+
+The browser calls only the relative backend assistant endpoint through the existing
+same-origin proxy. The smoke test checks real local inference, six persisted service
+IDs (13, 14, 15, 16, 19, 20), item navigation and mobile layout. Optional
+`SMOKE_ASSISTANT_SCREENSHOT`, `SMOKE_ASSISTANT_MOBILE_SCREENSHOT` and
+`SMOKE_ASSISTANT_EVIDENCE` paths capture evidence. Existing `npm run smoke` still
+checks conventional search/detail independently of AI availability.
+
+Hosted Slice 15 acceptance remains **on hold**. Slice 16 validation is against local
+Ollama only; no hosted-provider acceptance is claimed. See
+[Slice 16 validation](docs/SLICE_16_VALIDATION.md).

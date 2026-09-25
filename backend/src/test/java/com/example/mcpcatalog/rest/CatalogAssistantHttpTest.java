@@ -18,6 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -149,6 +150,50 @@ class CatalogAssistantHttpTest {
 			.andExpect(jsonPath("$.message").value("The catalog assistant could not complete the request."))
 			.andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.not(
 					org.hamcrest.Matchers.containsString("secret"))));
+	}
+
+	@Test
+	void returnsTheSameContractForTheHostedProvider() throws Exception {
+		CatalogAssistantService service = service();
+		when(service.ask(any())).thenReturn(new CatalogAssistantResult("Six matching services.",
+				"search_catalog", Map.of("type", "SERVICE", "active", true, "maxPrice", 199.99),
+				List.of(new SearchCatalogItem(13, "SVC-101", "Network Audit", "SERVICE", "Audit",
+						new java.math.BigDecimal("150.00"), true, "2026-01-15T09:00:00Z", "2026-01-15T09:00:00Z")),
+				0, 20, 6, 1, "bailian", "qwen-plus"));
+
+		mvc(service).perform(post(ENDPOINT).contentType(MediaType.APPLICATION_JSON)
+			.content("{\"prompt\":\"Show me active service items under $200.\"}"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.provider").value("bailian"))
+			.andExpect(jsonPath("$.model").value("qwen-plus"))
+			.andExpect(jsonPath("$.capability").value("search_catalog"))
+			.andExpect(jsonPath("$.arguments.maxPrice").value(199.99))
+			.andExpect(jsonPath("$.items[0].sku").value("SVC-101"))
+			.andExpect(jsonPath("$.page").value(0))
+			.andExpect(jsonPath("$.totalItems").value(6))
+			.andExpect(jsonPath("$.totalPages").value(1));
+	}
+
+	@Test
+	void errorResponsesNeverExposeCredentialMaterialOrProviderDiagnostics() throws Exception {
+		CatalogAssistantService service = service();
+		when(service.ask(any())).thenThrow(new CatalogAssistantUnavailableException(
+				CatalogAssistantUnavailableException.MESSAGE,
+				new IllegalStateException("401 Incorrect API key provided: sk-secret-value")));
+
+		String body = mvc(service)
+			.perform(post(ENDPOINT).contentType(MediaType.APPLICATION_JSON).content("{\"prompt\":\"all\"}"))
+			.andExpect(status().isServiceUnavailable())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(body).contains("The catalog assistant is currently unavailable.")
+			.doesNotContain("sk-secret-value")
+			.doesNotContain("Bearer")
+			.doesNotContain("401")
+			.doesNotContain("Incorrect API key")
+			.doesNotContain("IllegalStateException");
 	}
 
 	@Test

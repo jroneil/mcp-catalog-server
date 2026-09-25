@@ -215,6 +215,34 @@ class CatalogAssistantServiceTest {
 	}
 
 	@Test
+	void reportsTheLogicalProviderAndItsConfiguredModelWithoutChangingTheContract() {
+		when(this.catalogService.search(any())).thenReturn(page());
+		this.chatModel.then(toolCall("search_catalog", "{}")).then(text("All items."));
+		CatalogAssistantResult local = this.service.ask("list everything");
+		assertThat(local.provider()).isEqualTo("ollama");
+		assertThat(local.model()).isEqualTo("qwen3-coder-next:latest");
+
+		// Hosted mode is the same workflow and contract with a different logical provider.
+		this.properties.setProvider("bailian");
+		ScriptedChatModel hostedModel = new ScriptedChatModel();
+		hostedModel.then(toolCall("search_catalog", "{}")).then(text("All items."));
+		CatalogAssistantService hosted = new CatalogAssistantService(hostedModel,
+				new SearchCatalogTool(this.catalogService), this.properties, "qwen-plus");
+		CatalogAssistantResult hostedResult = hosted.ask("list everything");
+
+		assertThat(hostedResult.provider()).isEqualTo("bailian");
+		assertThat(hostedResult.model()).isEqualTo("qwen-plus");
+		assertThat(hostedResult.capability()).isEqualTo(local.capability()).isEqualTo("search_catalog");
+		assertThat(hostedResult.answer()).isEqualTo(local.answer());
+		assertThat(hostedResult.arguments()).isEqualTo(local.arguments());
+		assertThat(hostedResult.items()).isEqualTo(local.items());
+		assertThat(hostedResult.page()).isEqualTo(local.page());
+		assertThat(hostedResult.pageSize()).isEqualTo(local.pageSize());
+		assertThat(hostedResult.totalItems()).isEqualTo(local.totalItems());
+		assertThat(hostedResult.totalPages()).isEqualTo(local.totalPages());
+	}
+
+	@Test
 	void reportsAnUnreachableProviderAsUnavailableWithoutLeakingDiagnostics() {
 		this.chatModel.thenFail(new ResourceAccessException("I/O error on POST to Ollama",
 				new ConnectException("Connection refused to /127.0.0.1:11434")));

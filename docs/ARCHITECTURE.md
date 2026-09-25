@@ -1,6 +1,6 @@
 # MCP Catalog Platform architecture
 
-Decision gate resolved 2026-09-23. Planning reference: [implementation plan v0.2](MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md), covering Phases 1 and 2. Slices 1–10 are complete and accepted; Phase 2 Slice 11 adds the approved REST adapter; Slice 12 adds Angular search; Slice 13 adds item detail; Slices 14–17 have not started. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
+Decision gate resolved 2026-09-23. Planning reference: [implementation plan v0.2](MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md), covering Phases 1 and 2. Slices 1–10 are complete and accepted; Phase 2 Slice 11 adds the approved REST adapter; Slice 12 adds Angular search; Slice 13 adds item detail; Slice 14 local workflow is accepted; Slice 15 hosted acceptance is on hold; Slice 16 adds the local-only assistant UI; Slice 17 has not started. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
 
 ## Pinned decisions
 
@@ -348,3 +348,87 @@ Spring AI's default retries transient provider failures up to 10 times, which bo
 D5's no-retry rule and misreported an unreachable provider as a timeout. Live validation,
 including the local data path and PostgreSQL-grounded D9 scenario, is recorded in
 [Slice 14 validation](SLICE_14_VALIDATION.md).
+
+## Slice 15 hosted provider selection (D7 finalized, D8/D9 hosted approved)
+
+**D8 — hosted provider (approved):** the hosted provider is **Bailian / Alibaba Cloud
+Model Studio (DashScope)** used through its **OpenAI-compatible API**. The added dependency
+is the BOM-managed `spring-ai-starter-model-openai` with no explicit version and no upgrade
+of Spring AI, Spring Boot or MCP. That module is the **OpenAI-compatible protocol client
+only**: the logical, application-level provider is `bailian` and that is what configuration
+and the assistant response carry. No `spring-ai-alibaba` or other third-party provider
+framework is introduced. The hosted model is `qwen3.8-max`. The live probe of this model
+returned HTTP 403 `AccessDenied.Unpurchased` ("Access to model denied") from the Bailian
+account, so the required native tool call is not yet demonstrated and Slice 15 is not
+accepted; no replacement model was chosen without approval.
+
+Credentials are environment-only: `BAILIAN_API_KEY` is read from the process environment,
+never committed, never written to `.env`, never returned in a response and never logged;
+`.env.example` carries a placeholder only. The endpoint is `BAILIAN_BASE_URL`, defaulting to
+the official documented DashScope OpenAI-compatible base URL for the credential's region
+(`https://dashscope-intl.aliyuncs.com/compatible-mode/v1`) and overridden at run time for
+actual validation with the account's workspace-specific endpoint; per the Model Studio documentation
+the base URL ends with `/compatible-mode/v1` and excludes `/chat/completions`, and an API key
+is bound to the region of the endpoint it calls. The model is `BAILIAN_MODEL` (default
+`qwen-plus`).
+
+**D7 finalized — provider selection and startup:** the default remains `AI_PROVIDER=ollama`
+and the supported logical values are exactly `ollama` and `bailian`. Selection is
+configuration/startup based only: no hot switching, no provider-selection UI and no
+automatic fallback. Internally a single `EnvironmentPostProcessor`
+(`AiProviderEnvironmentPostProcessor`, registered in `META-INF/spring.factories`) maps the
+logical provider onto Spring AI's model switch — `ollama` → `spring.ai.model.chat=ollama`,
+`bailian` → `spring.ai.model.chat=openai` — so exactly one ChatModel bean is ever created and
+the two Spring AI auto-configurations never compete. `spring.ai.model.embedding` is set to
+`none` because this application uses no embedding models and both starters' embedding
+auto-configurations would otherwise be active at once. The chat auto-configurations stay
+otherwise conventional, so the existing `spring.ai.ollama.*` and `spring.ai.openai.*`
+properties are used underneath.
+
+Startup behaviour is option 6b: the application starts normally when hosted credentials are
+absent, when Bailian is unreachable and when Ollama is unavailable, and normal REST, MCP and
+catalog functionality stays usable. Ollama mode requires no hosted credential. If
+`AI_PROVIDER=bailian` but the credential or configuration is missing or unusable, only the
+assistant endpoint returns a sanitized 503. This works because Spring AI's OpenAI setup
+builds a no-auth client for an empty key rather than asserting at startup.
+
+Provider metadata is neutral: the assistant no longer assumes the model name comes from
+`spring.ai.ollama.chat.model`. Each provider configuration contributes the logical provider
+and its own configured model, so the response reports `ollama / qwen3-coder-next:latest` or
+`bailian / qwen3.8-max`. The accepted assistant response schema is unchanged, as is the single
+workflow, the one-capability-call bound, grounding in the capability result, `AI_TIMEOUT`
+(60 s default) and `spring.ai.retry.max-attempts=0` (no provider retry, no fallback).
+
+The AI-adapter failure classifier is extended provider-neutrally so Spring AI's
+`TransientAiException`/`NonTransientAiException` and underlying client failures also map to
+the approved statuses: invalid generated catalog arguments stay 400, provider
+unavailable/auth/quota/provider-side failure becomes a sanitized 503, timeouts a sanitized
+504 and unexpected failures a sanitized 500. Raw provider bodies, credential details,
+provider stack traces and internal exception class names are never returned, and no
+`CatalogService`, REST catalog, MCP, persistence or workflow-semantics change is involved.
+
+## Slice 16 Angular catalog assistant
+
+The catalog search page includes one standalone CatalogAssistantComponent below the
+conventional results. CatalogAssistantApi posts only `{prompt}` to relative
+`/api/v1/catalog/assistant`. Existing nginx/development proxy routing is unchanged:
+browser → REST assistant → CatalogAssistantService → local Ollama → existing
+`search_catalog` capability → CatalogService → PostgreSQL. No browser provider calls,
+provider configuration, credentials, MCP access or CORS changes are introduced.
+
+The backend owns prompt validation, interpretation, catalog bounds and returned facts.
+Angular renders the answer as escaped text and items in returned order, including
+detail links and returned totals; it does not infer filters or fetch additional pages.
+Blank/oversized prompts reach backend validation. Sanitized contract 400 messages are
+displayed for correction; malformed 400 bodies and other failures use fixed safe text.
+503/network failures, 504 timeouts and unexpected failures allow an explicit retry of
+the last submitted prompt. There is no automatic retry or conversation history.
+New submissions clear old results and cancel the previous browser subscription;
+destruction cancels pending work. Browser cancellation does not guarantee cancellation
+of already-running backend inference. Provider/model metadata is not rendered.
+
+D9 local UI scenario is approved: “Show me active service items under $200.” with
+`AI_PROVIDER=ollama`, `OLLAMA_MODEL=qwen3-coder-next:latest`, expected persisted IDs
+13, 14, 15, 16, 19, 20. Hosted Slice 15 acceptance remains on hold; Slice 16 makes
+no hosted acceptance claim. No backend, migration, contract, dependency or security
+changes are required. See [Slice 16 validation](SLICE_16_VALIDATION.md).

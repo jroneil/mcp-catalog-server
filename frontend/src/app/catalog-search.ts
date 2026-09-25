@@ -1,3 +1,4 @@
+import { CatalogAssistantComponent } from './catalog-assistant';
 import { DecimalPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, ElementRef, inject, OnDestroy, OnInit, signal, viewChild } from '@angular/core';
@@ -8,7 +9,7 @@ import { CatalogApi, CatalogPage, CatalogSearch } from './catalog-api';
 
 @Component({
   selector: 'app-catalog-search',
-  imports: [DecimalPipe, RouterLink],
+  imports: [DecimalPipe, RouterLink, CatalogAssistantComponent],
   templateUrl: './catalog-search.html',
   styleUrl: './catalog-search.css',
 })

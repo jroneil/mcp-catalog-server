@@ -1,8 +1,8 @@
 # MCP Catalog Platform — Phases 1 and 2 test plan
 
-**Status:** Phase 1 complete (Slices 1–10); Slices 11–14 REST/frontend/AI coverage added
-**Source requirements:** PRD v0.3 §16 (Testing Strategy), §12 (Startup Acceptance), §14 (Error Handling), §15 (Security); Implementation Plan v0.2, Slices 10–14
-**Scope:** Phase 1 baseline plus Slice 11 REST, Slices 12–13 frontend and Slice 14 local-AI coverage. This document records what exists; it does not propose new tests.
+**Status:** Phase 1 complete (Slices 1–10); Slices 11–16 coverage present; Slice 15 hosted acceptance on hold; Slice 16 validated locally only
+**Source requirements:** PRD v0.3 §16 (Testing Strategy), §12 (Startup Acceptance), §14 (Error Handling), §15 (Security); Implementation Plan v0.2, Slices 10–16
+**Scope:** Phase 1 baseline plus Slice 11 REST, Slices 12–13 frontend and local-AI/Angular assistant coverage through Slice 16. This document records what exists; it does not propose new tests.
 
 ---
 
@@ -28,7 +28,7 @@ curl --fail --silent --show-error http://127.0.0.1:8080/actuator/health/readines
 Docker image builds deliberately skip test execution (`-DskipTests`); the Maven gate
 above is the authoritative test run.
 
-**Current result: `clean verify` → BUILD SUCCESS, 232 tests, 0 failures, 0 errors, 0 skips. Phase 1 accepted baseline: 184 tests; approved transition and added coverage are recorded in [Slice 11 validation](SLICE_11_VALIDATION.md).**
+**Current result: `clean verify` → BUILD SUCCESS, 285 tests, 0 failures, 0 errors, 0 skips. Phase 1 accepted baseline: 184 tests; approved transition and added coverage are recorded in [Slice 11 validation](SLICE_11_VALIDATION.md).**
 
 ---
 
@@ -221,3 +221,33 @@ REST, the accepted two MCP tools and a sanitized 503 from the assistant only.
 The full backend gate is **263 tests** with no failures; the live local Ollama acceptance
 scenario, its PostgreSQL confirmation and the local data-path evidence are in
 [Slice 14 validation](SLICE_14_VALIDATION.md). Mocks do not replace the live requirement.
+
+## Slice 16 Angular assistant coverage
+
+Nineteen new tests in `catalog-assistant.spec.ts` exercise the real API client with
+HttpTestingController: relative POST mapping and prompt-only body; submission/loading;
+authoritative answer/items/totals/detail links; escaped markup; returned ordering and
+inactive items; empty results; blank/whitespace/oversized prompt validation through the
+backend; unsupported-intent 400 and correction; malformed error bodies; sanitized
+503/504/500/502 errors without diagnostic URL/credential leakage; network failure and
+explicit retry; stale/repeated submission cancellation; destruction cancellation.
+No provider/model metadata or configuration is displayed and no automatic retry occurs.
+All 40 existing search/detail tests remain unchanged and pass (59 total).
+
+```bash
+cd frontend
+npm test -- --include='src/app/catalog-assistant.spec.ts'
+npm test
+npm run build
+CHROME_BIN=/usr/bin/google-chrome npm run smoke
+CHROME_BIN=/usr/bin/google-chrome node scripts/catalog-assistant-smoke.mjs
+```
+
+The separate assistant smoke uses real local Ollama through the unchanged backend,
+checks HTTP 200 and exact local provider/model, persisted IDs/SKUs, rendered answer and
+items, mobile overflow, same-origin requests, detail/return navigation and absence of
+browser errors. Optional screenshot/evidence paths are documented in README. The full
+backend gate passed 285 tests (zero failures/errors/skips); no backend files were changed
+by Slice 16. PostgreSQL confirmation and runtime/security results are recorded in
+[Slice 16 validation](SLICE_16_VALIDATION.md). Hosted Slice 15 acceptance remains on
+hold; no hosted-provider acceptance claim is made and Slice 17 has not started.

@@ -1,0 +1,34 @@
+<section class="assistant" aria-labelledby="assistant-title">
+  <h2 id="assistant-title">Ask the catalog</h2>
+  <p>Describe the products or services you need, or use the filters above.</p>
+  <form (submit)="submit($event)" aria-label="Catalog assistant" novalidate>
+    <label for="catalog-prompt">Catalog request</label>
+    <textarea id="catalog-prompt" name="prompt" rows="2" placeholder="Show me active service items under $200."></textarea>
+    <button type="submit">Find catalog items</button>
+  </form>
+  <div [attr.aria-busy]="loading()" aria-live="polite">
+    @if (loading()) {
+      <p role="status">Finding matching catalog items…</p>
+    }
+    @if (error(); as message) {
+      <div class="error" role="alert"><p>{{ message }}</p>
+        @if (retryable()) { <button type="button" (click)="retry()">Retry catalog request</button> }
+      </div>
+    }
+    @if (result(); as response) {
+      <div class="answer"><h3>Catalog answer</h3><p>{{ response.answer }}</p></div>
+      <p>Showing {{ response.items.length }} of {{ response.totalItems }} matching items.</p>
+      @if (response.items.length === 0) { <p>No matching items were returned. Try another catalog request.</p> }
+      <div class="assistant-items">
+        @for (item of response.items; track item.id) {
+          <article [attr.data-item-id]="item.id" [attr.aria-label]="item.name">
+            <span>{{ item.type === 'PRODUCT' ? 'Product' : 'Service' }} · {{ item.active ? 'Active' : 'Inactive' }}</span>
+            <h3><a [routerLink]="['/catalog', item.id]">{{ item.name }}</a></h3>
+            <p>{{ item.description }}</p>
+            <div class="item-meta"><span>{{ item.sku }}</span><strong>Price {{ item.price | number:'1.2-2' }}</strong></div>
+          </article>
+        }
+      </div>
+    }
+  </div>
+</section>

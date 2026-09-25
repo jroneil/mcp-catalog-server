@@ -26,6 +26,8 @@ import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.model.tool.ToolCallingManager;
+import org.springframework.ai.retry.NonTransientAiException;
+import org.springframework.ai.retry.TransientAiException;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.execution.DefaultToolExecutionExceptionProcessor;
 import org.springframework.ai.util.JsonHelper;
@@ -179,8 +181,11 @@ public class CatalogAssistantService {
 
 	/**
 	 * Service validation errors keep their own type (and therefore the same safe 400 and
-	 * message as the REST search endpoint). Provider connectivity problems become 503,
-	 * timeouts 504, and everything else a sanitized 500.
+	 * message as the REST search endpoint). Provider connectivity, authentication, quota and
+	 * other provider-side failures become 503, timeouts 504, and everything else a sanitized
+	 * 500. The classification is provider-neutral: alongside the blocking clients' IO/HTTP
+	 * failures it recognises Spring AI's own transient and non-transient AI exceptions, so
+	 * the local and hosted providers map to the same statuses.
 	 */
 	private static RuntimeException classify(Throwable failure) {
 		if (failure instanceof InvalidCatalogCriteriaException invalid) {
@@ -193,13 +198,51 @@ public class CatalogAssistantService {
 			return (RuntimeException) failure;
 		}
 		logger.warn("Catalog assistant provider call failed", failure);
-		if (hasCause(failure, SocketTimeoutException.class, HttpTimeoutException.class, TimeoutException.class)) {
+		if (hasCause(failure, SocketTimeoutException.class, HttpTimeoutException.class, TimeoutException.class)
+				|| hasTimeoutType(failure)) {
 			return new CatalogAssistantTimeoutException(failure);
 		}
-		if (hasCause(failure, IOException.class, RestClientException.class)) {
+		if (hasCause(failure, IOException.class, RestClientException.class, TransientAiException.class,
+				NonTransientAiException.class) || isReactiveClientFailure(failure)) {
 			return new CatalogAssistantUnavailableException(CatalogAssistantUnavailableException.MESSAGE, failure);
 		}
 		return new CatalogAssistantInternalException(failure);
+	}
+
+	/**
+	 * Recognises provider-neutral timeout types, including the reactive/Netty timeouts that
+	 * are not JDK {@link TimeoutException}s, without depending on those client types.
+	 */
+	private static boolean hasTimeoutType(Throwable failure) {
+		for (Throwable current = failure; current != null; current = current.getCause()) {
+			for (Class<?> type = current.getClass(); type != null; type = type.getSuperclass()) {
+				if (type.getSimpleName().contains("Timeout")) {
+					return true;
+				}
+			}
+			if (current.getCause() == current) {
+				break;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Recognises the reactive HTTP client failures the OpenAI-compatible module can raise
+	 * without this adapter depending on WebFlux types directly.
+	 */
+	private static boolean isReactiveClientFailure(Throwable failure) {
+		for (Throwable current = failure; current != null; current = current.getCause()) {
+			for (Class<?> type = current.getClass(); type != null; type = type.getSuperclass()) {
+				if (type.getName().startsWith("org.springframework.web.reactive.function.client.WebClient")) {
+					return true;
+				}
+			}
+			if (current.getCause() == current) {
+				break;
+			}
+		}
+		return false;
 	}
 
 	@SafeVarargs
