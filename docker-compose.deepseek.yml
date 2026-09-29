@@ -1,0 +1,7 @@
+# Explicit opt-in only. Default docker-compose.yml remains local Ollama.
+services:
+  mcp-catalog-server:
+    environment:
+      SPRING_PROFILES_ACTIVE: deepseek
+      AI_PROVIDER: bailian
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?Export DEEPSEEK_API_KEY before using the DeepSeek override}

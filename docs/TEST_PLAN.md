@@ -1,7 +1,7 @@
 # MCP Catalog Platform — Phases 1 and 2 test plan
 
 **Status:** Phase 1 complete (Slices 1–10); Slices 11–16 coverage present; Slice 15 hosted acceptance on hold; Slice 16 validated locally only
-**Source requirements:** PRD v0.3 §16 (Testing Strategy), §12 (Startup Acceptance), §14 (Error Handling), §15 (Security); Implementation Plan v0.2, Slices 10–16
+**Source requirements:** PRD v0.3 §16 (Testing Strategy), §12 (Startup Acceptance), §14 (Error Handling), §15 (Security); Implementation Plan v0.2, Slices 10–17
 **Scope:** Phase 1 baseline plus Slice 11 REST, Slices 12–13 frontend and local-AI/Angular assistant coverage through Slice 16. This document records what exists; it does not propose new tests.
 
 ---
@@ -28,7 +28,7 @@ curl --fail --silent --show-error http://127.0.0.1:8080/actuator/health/readines
 Docker image builds deliberately skip test execution (`-DskipTests`); the Maven gate
 above is the authoritative test run.
 
-**Current result: `clean verify` → BUILD SUCCESS, 285 tests, 0 failures, 0 errors, 0 skips. Phase 1 accepted baseline: 184 tests; approved transition and added coverage are recorded in [Slice 11 validation](SLICE_11_VALIDATION.md).**
+**Current result: `clean verify` → BUILD SUCCESS, 292 tests, 0 failures, 0 errors, 0 skips. Phase 1 accepted baseline: 184 tests; approved transition and added coverage are recorded in [Slice 11 validation](SLICE_11_VALIDATION.md).**
 
 ---
 
@@ -124,7 +124,7 @@ Documented with exact commands and outputs in the corresponding validation recor
 - Tool result schemas are asserted structurally, not against a stored JSON Schema
   document, because Spring AI 2.0.1's `ToolCallback` conversion does not expose
   `outputSchema`.
-- AI-provider tests remain deferred to Slices 14–16; frontend search and detail are covered.
+- The historical Phase 1 suite excludes AI; current deterministic AI and frontend coverage is recorded below.
 
 
 ## 8. Slice 11 REST gate and approved architecture transition
@@ -250,4 +250,58 @@ browser errors. Optional screenshot/evidence paths are documented in README. The
 backend gate passed 285 tests (zero failures/errors/skips); no backend files were changed
 by Slice 16. PostgreSQL confirmation and runtime/security results are recorded in
 [Slice 16 validation](SLICE_16_VALIDATION.md). Hosted Slice 15 acceptance remains on
-hold; no hosted-provider acceptance claim is made and Slice 17 has not started.
+hold; no hosted-provider acceptance claim is made. The subsequent Slice 17 audit is recorded below.
+
+## Slice 17 audit rerun
+
+All existing gates were rerun unchanged: **285 backend tests, zero failures/errors/skips;
+59 frontend tests; production build; healthy Compose; live REST/MCP equivalence and
+Origin/Host checks; real search/detail and local Ollama browser smoke**. Exact commands
+and requirement mapping are in [Slice 17 validation](SLICE_17_VALIDATION.md). Historical
+counts above describe their original slices, not the current total. Hosted-client tests
+use scripted models/configuration contexts or an unreachable loopback endpoint; they do
+not satisfy the missing real hosted acceptance. No tests were added, changed or weakened.
+
+**Coverage gap / A17-01:** existing provider failure tests assert safe caller messages but
+do not assert log sanitization. Their synthetic `sk-secret-value` marker was found in
+the fresh Maven log because production code logs the raw throwable. Passing tests do not
+waive PRD §§11/15/17's sensitive-logging requirement. This criterion is FAIL; remediation
+and log-output regression coverage are deferred to the owning AI slices. Hosted criteria
+remain BLOCKED — HOSTED ACCEPTANCE ON HOLD. Slice 17 local audit activities are complete,
+but neither full Slice 17 acceptance nor Phase 2 acceptance is complete.
+
+## DeepSeek configuration and A17-01 follow-up (2026-09-28)
+
+No real hosted calls or credentials were used. Seven new `DeepSeekProfileTest` cases
+verify profile URL/model/required external-key mapping to the existing hosted client,
+no Ollama override, missing/blank rejection, default-context isolation and active-profile
+startup rejection without a key. The existing six `CatalogAssistantProviderFailureTest`
+cases now also capture application Logback events: fixed message only, no arguments and
+no throwable. Their original synthetic credential-like exception fixtures cannot appear
+in those log events. Services and appenders are cleaned up after each case.
+
+A17-01's application-owned raw exception logging is fixed. The historical Slice 17 failure
+record remains unchanged; this does not establish live hosted-provider acceptance.
+The full fresh Maven output also contains none of the three original A17-01 synthetic
+provider-error markers. No claim is made about non-default debug or third-party logging.
+
+Validation commands (repository root unless shown):
+
+```bash
+mvn -f backend/pom.xml --batch-mode --no-transfer-progress test -Dtest=DeepSeekProfileTest,CatalogAssistantProviderFailureTest,CatalogAssistantConfigurationTest,CatalogAssistantProviderSelectionTest,AiProviderEnvironmentPostProcessorTest
+mvn -f backend/pom.xml --batch-mode --no-transfer-progress clean verify
+# Must reject the empty credential before startup; no network/provider request:
+DEEPSEEK_API_KEY='' docker compose -f docker-compose.yml -f docker-compose.deepseek.yml config --quiet
+cd frontend
+npm test
+npm run build
+cd ..
+git diff --check
+```
+
+Results: **28 focused tests passed; 292 full backend tests passed with zero failures,
+errors or skips; 59 frontend tests passed; Angular production build passed** (285.05 kB
+initial bundle, no budget warning). The empty-key Compose check failed as expected with
+the required-variable error. Valid-key hosted startup/inference was deliberately not run.
+The existing local provider behavior, frontend, contracts and dependencies are unchanged.
+No hosted acceptance claim, Phase 3 work or commit.

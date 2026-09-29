@@ -1,6 +1,6 @@
 # MCP Catalog Platform architecture
 
-Decision gate resolved 2026-09-23. Planning reference: [implementation plan v0.2](MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md), covering Phases 1 and 2. Slices 1–10 are complete and accepted; Phase 2 Slice 11 adds the approved REST adapter; Slice 12 adds Angular search; Slice 13 adds item detail; Slice 14 local workflow is accepted; Slice 15 hosted acceptance is on hold; Slice 16 adds the local-only assistant UI; Slice 17 has not started. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
+Decision gate resolved 2026-09-23. Planning reference: [implementation plan v0.2](MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md), covering Phases 1 and 2. Slices 1–10 are complete and accepted; Phase 2 Slice 11 adds the approved REST adapter; Slice 12 adds Angular search; Slice 13 adds item detail; Slice 14 local workflow is accepted; Slice 15 hosted acceptance is on hold; Slice 16 adds the local-only assistant UI; Slice 17 local audit activities are complete; hosted acceptance remains blocked; the subsequent DeepSeek configuration follow-up fixes A17-01. The PRD v0.3 governs product requirements; the reference guide's alternative slice numbering does not govern delivery.
 
 ## Pinned decisions
 
@@ -363,14 +363,15 @@ account, so the required native tool call is not yet demonstrated and Slice 15 i
 accepted; no replacement model was chosen without approval.
 
 Credentials are environment-only: `BAILIAN_API_KEY` is read from the process environment,
-never committed, never written to `.env`, never returned in a response and never logged;
+never committed, never written to `.env` and never returned in a response; the Slice 17 audit found raw exception logging (A17-01), fixed in the subsequent
+configuration follow-up described below;
 `.env.example` carries a placeholder only. The endpoint is `BAILIAN_BASE_URL`, defaulting to
 the official documented DashScope OpenAI-compatible base URL for the credential's region
 (`https://dashscope-intl.aliyuncs.com/compatible-mode/v1`) and overridden at run time for
 actual validation with the account's workspace-specific endpoint; per the Model Studio documentation
 the base URL ends with `/compatible-mode/v1` and excludes `/chat/completions`, and an API key
-is bound to the region of the endpoint it calls. The model is `BAILIAN_MODEL` (default
-`qwen-plus`).
+is bound to the region of the endpoint it calls. The model is `BAILIAN_MODEL` (delivered default
+`qwen3.8-max`).
 
 **D7 finalized — provider selection and startup:** the default remains `AI_PROVIDER=ollama`
 and the supported logical values are exactly `ollama` and `bailian`. Selection is
@@ -432,3 +433,41 @@ D9 local UI scenario is approved: “Show me active service items under $200.”
 13, 14, 15, 16, 19, 20. Hosted Slice 15 acceptance remains on hold; Slice 16 makes
 no hosted acceptance claim. No backend, migration, contract, dependency or security
 changes are required. See [Slice 16 validation](SLICE_16_VALIDATION.md).
+
+## Slice 17 acceptance audit
+
+[Slice 17 validation](SLICE_17_VALIDATION.md) records the delivered architecture and local
+regression evidence without changing it. Slice 16: **COMPLETE for local Ollama acceptance**;
+Slice 15 hosted acceptance: **ON HOLD**; Phase 2 both-provider acceptance: **OUTSTANDING**.
+Slice 17 local audit activities are complete; overall acceptance is blocked.
+
+A17-01 is a confirmed implementation defect owned by Slices 14/15: the assistant failure
+classifier logs the raw throwable at WARN. Synthetic credential-bearing provider errors
+from the existing offline tests appear in logs, even though client errors are sanitized.
+This fails the sensitive-logging requirement; the audit makes no claim of real credential
+leakage and did not investigate credentials or make hosted calls. Remediation and a logging
+regression test belong to an authorized follow-up in the owning slice, not this audit.
+No layer, contract, provider configuration, database, network default or dependency changed.
+
+## DeepSeek configuration follow-up (2026-09-28)
+
+An opt-in `application-deepseek.yml` sets the existing hosted selector `bailian`,
+`spring.ai.openai.base-url=https://api.deepseek.com`,
+`spring.ai.openai.chat.model=deepseek-flash` and
+`spring.ai.openai.api-key=${DEEPSEEK_API_KEY}` with no fallback secret. The selector
+is a compatibility label; response provider metadata remains `bailian` even when the
+endpoint is DeepSeek. No separate DeepSeek client, abstraction or new selector is added.
+The `deepseek` profile adds only a startup guard requiring a non-blank externally
+supplied key. Default local and existing hosted configuration behavior is unchanged.
+
+`docker-compose.deepseek.yml` is an explicit opt-in override; it requires the external
+key, passes it only to the backend and activates the profile. Base Compose, local Ollama,
+ports, PostgreSQL, MCP, REST/service contracts and migrations are unchanged. See README
+for startup commands. No key is supplied by tracked configuration or by tests.
+
+The same follow-up fixes A17-01: the assistant classifier emits fixed diagnostic text
+without the provider exception, message or arguments. Existing failure tests inspect
+Logback events to prove all scripted provider failure cases have no throwable or raw
+content. The historic Slice 17 FAIL finding is preserved as evidence; this scoped fix
+does not claim hosted acceptance or a fresh Phase 2 audit. Hosted acceptance remains
+outstanding until real validation is performed separately. No hosted calls occurred.

@@ -1,0 +1,12 @@
+# Opt-in configuration of the existing OpenAI-compatible client; no new provider code.
+# "bailian" is the legacy logical selector, not the destination in this profile.
+catalog:
+  ai:
+    provider: bailian
+spring:
+  ai:
+    openai:
+      base-url: https://api.deepseek.com
+      api-key: ${DEEPSEEK_API_KEY}
+      chat:
+        model: deepseek-flash

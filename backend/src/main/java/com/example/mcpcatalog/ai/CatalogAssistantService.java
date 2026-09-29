@@ -197,7 +197,9 @@ public class CatalogAssistantService {
 				|| failure instanceof InvalidCatalogAssistantRequestException) {
 			return (RuntimeException) failure;
 		}
-		logger.warn("Catalog assistant provider call failed", failure);
+		// Provider exceptions can contain credentials, request data and response bodies.
+		// Keep diagnostics fixed; never attach the throwable or its message.
+		logger.warn("Catalog assistant provider call failed; details suppressed");
 		if (hasCause(failure, SocketTimeoutException.class, HttpTimeoutException.class, TimeoutException.class)
 				|| hasTimeoutType(failure)) {
 			return new CatalogAssistantTimeoutException(failure);

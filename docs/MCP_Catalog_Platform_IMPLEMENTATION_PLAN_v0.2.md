@@ -1,6 +1,7 @@
 # MCP Catalog Platform — Phases 1 and 2 Implementation Plan
 
-**Status:** Phase 1 accepted; Phase 2 in progress: Slices 11–14 complete; Slice 15 implemented but **not accepted**, acceptance **on hold** pending external hosted-model entitlement — the approved hosted model `qwen3.8-max` is not eligible for the current Bailian account (HTTP 403, see Slice 15 validation); ongoing development uses local Ollama mode only; Slice 16 implemented and validated locally only; Slice 17 not started
+**Status:** Phase 1 accepted; Phase 2 in progress: Slices 11–14 complete; Slice 15 implemented but **not accepted**, acceptance **on hold** pending external hosted-model entitlement — the approved hosted model `qwen3.8-max` is not eligible for the current Bailian account (HTTP 403, see Slice 15 validation); ongoing development uses local Ollama mode only; Slice 16 implemented and validated locally only; Slice 17 local audit activities complete; acceptance blocked by hosted evidence; A17-01 fixed by the follow-up below
+**Follow-up 2026-09-28:** the opt-in DeepSeek profile reuses the existing hosted client and fixes A17-01 with offline logging regression coverage. The Slice 17 audit result below is historical and is not retroactively rewritten. Hosted acceptance remains outstanding; no live DeepSeek validation or Phase 3 work is claimed. See README.
 **Version:** 0.2  
 **Date:** 2026-09-23  
 **Source PRD:** `MCP_Catalog_Platform_PRD_v0.3.md`  
@@ -16,7 +17,7 @@ The Phase 2 plan and decision gates begin in section 8. The user subsequently ap
 
 ## 1. Purpose
 
-This revision preserves the completed Phase 1 plan and adds the approved Phase 2 slice decomposition derived from PRD v0.3. Slices 11–14 are complete; Slice 15 hosted acceptance remains on hold; Slice 16 is implemented and validated locally only; Slice 17 has not started. See [Slice 12 validation](SLICE_12_VALIDATION.md). See [Slice 11 validation](SLICE_11_VALIDATION.md).
+This revision preserves the completed Phase 1 plan and adds the approved Phase 2 slice decomposition derived from PRD v0.3. Slices 11–14 are complete; Slice 15 hosted acceptance remains on hold; Slice 16 is implemented and validated locally only; Slice 17 local audit activities are complete; acceptance remains blocked. See [Slice 12 validation](SLICE_12_VALIDATION.md). See [Slice 11 validation](SLICE_11_VALIDATION.md).
 
 The plan is intentionally narrow.
 
@@ -818,9 +819,9 @@ Phase 2 derives from PRD FR-7–FR-13A and supporting §§9–16, 19, 21–23. I
 | 12 | Angular catalog search and Docker integration | Complete; see Slice 12 validation |
 | 13 | Angular catalog item detail | Complete; see Slice 13 validation |
 | 14 | Local Ollama catalog workflow — backend | Complete; see Slice 14 validation |
-| 15 | Hosted provider and configuration-based selection | Planned; provider decisions pending |
-| 16 | Natural-language catalog workflow in Angular | Planned |
-| 17 | Phase 2 acceptance audit and documentation | Planned |
+| 15 | Hosted provider and configuration-based selection | Implemented; hosted acceptance ON HOLD |
+| 16 | Natural-language catalog workflow in Angular | COMPLETE for local Ollama acceptance; no hosted acceptance claim |
+| 17 | Phase 2 acceptance audit and documentation | Local audit activities complete; acceptance blocked by hosted hold and A17-01; see Slice 17 validation |
 
 Sequence rationale: REST establishes a separately testable adapter before browser work. Search proves the browser-to-database path and detail completes the conventional UI. Local AI proves capability invocation and the local data path before hosted-provider differences are introduced. The AI UI then consumes the established workflow. Final acceptance verifies the complete phase.
 
@@ -852,7 +853,7 @@ The slice decomposition is approved. The decisions below distinguish approval of
 | D5 — AI workflow contract and limits | Slice 14 | Resolved by user approval: `POST /api/v1/catalog/assistant` with `{"prompt":"..."}` (required, trimmed, non-blank, at most 1000 characters) returning `{answer, capability, arguments, items, page, pageSize, totalItems, totalPages, provider, model}`; unsupported intent returns 400 with a catalog-search-only message; exactly one capability call, no model or tool retry, 60 s externalized provider timeout, and sanitized 400/503/504/500 errors. No general chat. See ARCHITECTURE. |
 | D6 — Local model and data path | Slice 14 | Resolved by user approval: primary model `qwen3-coder-next:latest` — already installed, advertises tool capability, and demonstrated native `tool_calls` in Slice 9, whereas `qwen2.5-coder:14b` emitted arguments as plain text. Ollama stays outside Compose; the backend reaches the host through `OLLAMA_BASE_URL` and the minimal Linux `extra_hosts: host.docker.internal:host-gateway` mapping. Slice 14 validation records the live local data path and evidence that no hosted transmission is involved. |
 | D7 — Provider selection and startup | Slice 14; finalized in Slice 15 | Resolved for Slice 14 by user approval: application-level `catalog.ai.enabled/provider/timeout` over the starter's `spring.ai.ollama.*`, environment-backed by `AI_ENABLED`, `AI_PROVIDER`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `AI_TIMEOUT`; assistant beans exist only when enabled and the provider is `ollama`; REST, MCP and catalog start and work with Ollama absent and startup never contacts it; no hosted credential and no automatic fallback. Multi-provider switching is finalized in Slice 15. |
-| D8 — Hosted provider | Slice 15 | Open: first provider/model, compatible module and externally supplied credentials for live validation. Do not introduce an automatic hosted fallback. |
+| D8 — Hosted provider | Slice 15 | Design recorded in ARCHITECTURE and Slice 15 validation; implementation exists, but real hosted acceptance remains ON HOLD. No fallback or hosted investigation is authorized by Slice 17. |
 | D9 — Live workflow acceptance | Backend scenario before Slice 14; UI scenario before Slice 16 | Backend portion resolved: the agreed input `Show me active service items under $200.` invoked the catalog capability live and returned persisted IDs 13, 14, 15, 16, 19, 20 with recorded provider/model, arguments and PostgreSQL confirmation (Slice 14 validation). Local UI portion resolved by user approval for Slice 16: submit the same prompt through the Angular UI to the existing assistant endpoint, verify HTTP 200, provider=ollama, model=qwen3-coder-next:latest, IDs 13, 14, 15, 16, 19, 20 and PostgreSQL confirmation. Hosted UI acceptance remains on hold. |
 
 ### D2: approved REST architecture-test transition
@@ -1145,6 +1146,10 @@ Stop on fabricated results, mock-only provider evidence, leaked secrets or a req
 
 # Slice 17 — Phase 2 Acceptance Audit and Documentation
 
+**Audit result:** local audit activities complete; functional local gates pass. Hosted-dependent criteria remain **BLOCKED — HOSTED ACCEPTANCE ON HOLD**. Sensitive-logging criterion is **FAIL (A17-01)**. Overall Phase 2 both-provider acceptance is **OUTSTANDING**. See [Slice 17 validation](SLICE_17_VALIDATION.md).
+
+The user authorized evidence collection without hosted calls despite the unfulfilled Slice 15 dependency. This does not waive it. No implementation changes or Phase 3 work are part of this audit.
+
 ## Objective and PRD requirements
 
 Close Phase 2 against FR-7–FR-13A, §19 documentation, §21 exit criteria, §22 DoD and §23 scenarios.
@@ -1181,26 +1186,27 @@ Stop on missing evidence, failed tests or unmet requirements. Return defects to 
 
 ## 11. Phase 2 acceptance checklist
 
-These boxes record future acceptance work, not current completion.
+These boxes record the Slice 17 audit evidence. Unchecked hosted criteria remain blocked; the logging item fails under A17-01. Checked local evidence does not imply Phase 2 acceptance.
 
-- [ ] FR-7: Angular list/search, type/active/maximum-price filters, readable results and item detail work against real data.
-- [ ] FR-8: Versioned search/detail REST endpoints under `/api/v1/catalog` satisfy the approved contract.
-- [ ] FR-9: Equivalent REST/MCP requests use CatalogService and return consistent persisted data.
-- [ ] FR-10: Application works with an externally configured local Ollama installation/model.
-- [ ] FR-11: At least one hosted provider works, with configuration-only selection and no catalog/MCP coupling to its vendor.
-- [ ] FR-12: Local mode requires no hosted transmission of catalog/business prompt data; documented claims match the implemented and observed path.
-- [ ] FR-13: One concrete natural-language catalog workflow invokes catalog capability and presents matching results in the UI with both real provider modes.
-- [ ] FR-13A: Same-origin deployment/development proxy is used, or any enabled cross-origin access has an explicit allowlist without wildcard CORS.
-- [ ] Frontend builds and tests pass; backend full Maven gate passes, including all retained Phase 1 coverage and the approved D2 transition.
-- [ ] PostgreSQL/Testcontainers integration, REST validation/not-found/errors, frontend filters/detail/errors and provider workflow tests pass.
-- [ ] Compose starts frontend/backend/PostgreSQL and the browser retrieves catalog data via REST; health/readiness remains correct.
-- [ ] Existing backend loopback mapping, unpublished PostgreSQL and MCP Origin/Host protections remain intact; any new frontend host publication is local-only.
-- [ ] MCP tool contracts, accepted service behavior and immutable migrations remain unchanged.
-- [ ] New dependency/toolchain versions are pinned and compatible; no unapproved broad upgrade.
-- [ ] Provider secrets remain external/backend-side and absent from source, frontend assets and logs; sensitive prompt/business data is not logged by default.
-- [ ] README, architecture, test plan and per-slice validation records describe implemented behavior, exact commands and known limitations.
-- [ ] No placeholders are claimed as complete; no failed or skipped required gate is waived.
-- [ ] No unassigned write operations, speculative abstractions or Phase 3 functionality was added.
+- [x] FR-7: Angular list/search, type/active/maximum-price filters, readable results and item detail work against real data.
+- [x] FR-8: Versioned search/detail REST endpoints under `/api/v1/catalog` satisfy the approved contract.
+- [x] FR-9: Equivalent REST/MCP requests use CatalogService and return consistent persisted data.
+- [x] FR-10: Application works with an externally configured local Ollama installation/model.
+- [ ] FR-11: At least one hosted provider works, with configuration-only selection and no catalog/MCP coupling to its vendor. **BLOCKED — HOSTED ACCEPTANCE ON HOLD.**
+- [x] FR-12: Local mode requires no hosted transmission of catalog/business prompt data; documented claims match the implemented and observed path.
+- [ ] FR-13: One concrete natural-language catalog workflow invokes catalog capability and presents matching results in the UI with both real provider modes. **BLOCKED — HOSTED ACCEPTANCE ON HOLD.**
+- [x] FR-13A: Same-origin deployment/development proxy is used, or any enabled cross-origin access has an explicit allowlist without wildcard CORS.
+- [x] Frontend builds and tests pass; backend full Maven gate passes, including all retained Phase 1 coverage and the approved D2 transition.
+- [x] PostgreSQL/Testcontainers integration, REST validation/not-found/errors, frontend filters/detail/errors and provider workflow tests pass.
+- [x] Compose starts frontend/backend/PostgreSQL and the browser retrieves catalog data via REST; health/readiness remains correct.
+- [x] Existing backend loopback mapping, unpublished PostgreSQL and MCP Origin/Host protections remain intact; any new frontend host publication is local-only.
+- [x] MCP tool contracts, accepted service behavior and immutable migrations remain unchanged.
+- [x] New dependency/toolchain versions are pinned and compatible; no unapproved broad upgrade.
+- [ ] Provider secrets remain external/backend-side and absent from source, frontend assets and logs; sensitive prompt/business data is not logged by default. **FAIL — A17-01: raw provider exception logging.**
+- [x] README, architecture, test plan and per-slice validation records describe implemented behavior, exact commands and known limitations.
+- [x] No placeholders are claimed as complete; no failed or skipped required gate is waived.
+- [x] No unassigned write operations, speculative abstractions or Phase 3 functionality was added.
+
 
 ## 12. Phase 2 stop and completion rules
 

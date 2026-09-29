@@ -1,6 +1,8 @@
 # MCP Catalog Platform
 
-Slices 1–10 (Phase 1 complete): Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence, Actuator health, and a Streamable HTTP MCP server exposing the `search_catalog` and `get_catalog_item` tools with request-origin protection. Slice 11 adds read-only REST catalog search and detail through the same CatalogService as MCP. Phase 2 follows implementation plan v0.2; Slice 12 adds Angular search, Slice 13 adds item detail and Slice 14 adds the backend local Ollama catalog assistant; Slice 15 hosted acceptance is on hold; Slice 16 adds the local-only Angular assistant; Slice 17 has not started. License: TBD before public distribution.
+[![M8ven Score](https://m8ven.ai/badge/mcp/jroneil-mcp-catalog-server-z9f077?v=6f508f670d3851dabf92c69aa000f343)](https://m8ven.ai/mcp/jroneil-mcp-catalog-server-z9f077)
+
+Slices 1–10 (Phase 1 complete): Java 21 Spring Boot backend, PostgreSQL, Flyway migrations, seeded catalog persistence, Actuator health, and a Streamable HTTP MCP server exposing the `search_catalog` and `get_catalog_item` tools with request-origin protection. Slice 11 adds read-only REST catalog search and detail through the same CatalogService as MCP. Phase 2 follows implementation plan v0.2; Slice 12 adds Angular search, Slice 13 adds item detail and Slice 14 adds the backend local Ollama catalog assistant; Slice 15 hosted acceptance is on hold; Slice 16 adds the local-only Angular assistant; Slice 17 local audit activities are complete; acceptance remains blocked by hosted evidence; A17-01 was fixed in the subsequent DeepSeek configuration follow-up. License: TBD before public distribution.
 
 ## Start locally
 
@@ -18,6 +20,17 @@ curl --fail http://127.0.0.1:8080/actuator/health/readiness
 docker compose port mcp-catalog-server 8080
 ```
 
+To start with **DeepSeek** instead of local Ollama, complete the database setup above
+and manually export `DEEPSEEK_API_KEY` in your shell. Run this from the repository root:
+
+```bash
+: "${DEEPSEEK_API_KEY:?Export DEEPSEEK_API_KEY externally before starting DeepSeek}"
+docker compose -f docker-compose.yml -f docker-compose.deepseek.yml up --build --wait --wait-timeout 300
+```
+
+Never commit the key. See [DeepSeek hosted configuration](#deepseek-hosted-configuration-opt-in-acceptance-pending)
+for profile details; hosted acceptance remains pending.
+
 Open **http://127.0.0.1:4200** for the catalog search UI. The frontend is served by nginx with same-origin REST proxying. `FRONTEND_PORT` can change the host port while retaining loopback binding.
 
 Both health endpoints report `"status":"UP"` (the aggregate endpoint also lists health groups) after PostgreSQL is usable. The port command must show `127.0.0.1:8080` (or your `BACKEND_PORT`). PostgreSQL is private to the Compose network; backend publication is loopback-only. The container's internal wildcard listener supports Docker forwarding and does not change host binding. Phase 1 is local development, not production-hardened.
@@ -33,11 +46,11 @@ mvn -f backend/pom.xml --batch-mode --no-transfer-progress clean verify
 docker build -t mcp-catalog-server:0.1.0 backend
 ```
 
-The context test provisions its own PostgreSQL 18.6 container and verifies JDBC plus HTTP health/readiness; it needs no `.env` and never uses H2. Docker image builds compile/package but skip test execution; run the Maven gate separately. Flyway creates and seeds the catalog table. Additional PostgreSQL tests verify migrations, repository mappings, database constraints and failure of application startup on an invalid migration. The Slice 4 suites start the real MCP server on a random port and verify server identity, advertised capabilities, the `/mcp` route, Origin/Host rejection and tool discovery. The Slice 5 and 6 suites verify both tool contracts, mapping, validation and error behavior, and drive the production tools with a real MCP client against the seeded catalog. Slice 7 adds an end-to-end acceptance suite over the whole MCP path, architecture-boundary checks and failure-path sanitization coverage. The backend gate currently runs **285 tests** with no failures, including the accepted REST/MCP coverage and existing assistant regressions. The frontend gate runs **59 tests**, including 19 Slice 16 assistant cases, with real-browser search/detail and local assistant smoke checks. Passing deterministic regressions does not imply hosted acceptance.
+The context test provisions its own PostgreSQL 18.6 container and verifies JDBC plus HTTP health/readiness; it needs no `.env` and never uses H2. Docker image builds compile/package but skip test execution; run the Maven gate separately. Flyway creates and seeds the catalog table. Additional PostgreSQL tests verify migrations, repository mappings, database constraints and failure of application startup on an invalid migration. The Slice 4 suites start the real MCP server on a random port and verify server identity, advertised capabilities, the `/mcp` route, Origin/Host rejection and tool discovery. The Slice 5 and 6 suites verify both tool contracts, mapping, validation and error behavior, and drive the production tools with a real MCP client against the seeded catalog. Slice 7 adds an end-to-end acceptance suite over the whole MCP path, architecture-boundary checks and failure-path sanitization coverage. The backend gate currently runs **292 tests** with no failures, including the accepted REST/MCP coverage and existing assistant regressions. The frontend gate runs **59 tests**, including 19 Slice 16 assistant cases, with real-browser search/detail and local assistant smoke checks. Passing deterministic regressions does not imply hosted acceptance.
 
 For host execution, supply `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` for a reachable PostgreSQL instance, then run `mvn -f backend/pom.xml spring-boot:run`. Host execution binds `127.0.0.1:8080` by default; `.env` is read by Compose, not automatically by Spring Boot. Compose deliberately does not publish PostgreSQL.
 
-See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan v0.2](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md). The MCP endpoint is `/mcp` (synchronous Streamable HTTP) and exposes `search_catalog` and `get_catalog_item`; see the MCP section below. Slice 10 (the Phase 1 acceptance audit) is complete — see [Slice 10 validation](docs/SLICE_10_VALIDATION.md); Slice 11 adds the REST adapter; see [Slice 11 validation](docs/SLICE_11_VALIDATION.md). Slice 12 adds Angular search and Slice 13 adds item detail; Slice 14 is accepted, Slice 15 hosted acceptance is on hold, Slice 16 adds the local assistant UI and Slice 17 has not started.
+See [architecture and exact version decisions](docs/ARCHITECTURE.md) and the [implementation plan v0.2](docs/MCP_Catalog_Platform_IMPLEMENTATION_PLAN_v0.2.md). The MCP endpoint is `/mcp` (synchronous Streamable HTTP) and exposes `search_catalog` and `get_catalog_item`; see the MCP section below. Slice 10 (the Phase 1 acceptance audit) is complete — see [Slice 10 validation](docs/SLICE_10_VALIDATION.md); Slice 11 adds the REST adapter; see [Slice 11 validation](docs/SLICE_11_VALIDATION.md). Slice 12 adds Angular search and Slice 13 adds item detail; Slice 14 is accepted, Slice 15 hosted acceptance is on hold, Slice 16 adds the local assistant UI and Slice 17 local audit activities are complete; acceptance remains blocked by hosted evidence; A17-01 was fixed in the subsequent DeepSeek configuration follow-up.
 
 ## MCP server and tools (Slices 4–9)
 
@@ -351,12 +364,13 @@ backend keep their existing loopback-only publication.
 
 **The application does not require Ollama to start.** Startup never contacts it and REST,
 MCP and catalog behavior work normally without it; only the assistant endpoint reports a
-sanitized 503 when the provider is unreachable. A non-`ollama` provider value, or
-`AI_ENABLED=false`, disables the assistant without affecting startup. Local mode talks only
-to the local Ollama instance and the existing local application/database path; no hosted
-provider is configured, no automatic hosted fallback exists and no hosted credential is
-required. Errors are sanitized (400 invalid or unsupported request, 503 unavailable, 504
-timeout, 500 internal) and never include provider diagnostics, prompts or stack traces.
+sanitized 503 when the provider is unreachable. An unsupported provider value, or
+`AI_ENABLED=false`, disables the assistant without affecting startup. The delivered server
+supports configuration-only selection of `ollama` and `bailian`; only the local path is
+accepted. Local mode uses local Ollama and the application/database path, requires no
+hosted credential and has no automatic hosted fallback. Client error responses are
+sanitized (400 invalid or unsupported request, 503 unavailable, 504 timeout, 500 internal).
+The A17-01 application exception-logging fix is documented below.
 
 There is no AI user interface in Slice 14 — Angular AI interaction is Slice 16 and the
 hosted provider is Slice 15. See [Slice 14 validation](docs/SLICE_14_VALIDATION.md).
@@ -388,3 +402,89 @@ checks conventional search/detail independently of AI availability.
 Hosted Slice 15 acceptance remains **on hold**. Slice 16 validation is against local
 Ollama only; no hosted-provider acceptance is claimed. See
 [Slice 16 validation](docs/SLICE_16_VALIDATION.md).
+
+## Phase 2 acceptance audit (Slice 17)
+
+Slice 16 is **COMPLETE for local Ollama acceptance**. Slice 15 hosted acceptance remains
+**ON HOLD**; Phase 2 both-provider acceptance is **OUTSTANDING**. Slice 17 local audit
+activities are complete. Its historical result recorded missing hosted evidence and
+**A17-01**; the logging defect is fixed by the follow-up below, while hosted acceptance
+remains incomplete. No hosted acceptance is claimed.
+
+The audit reran 285 backend tests, 59 frontend tests, the production build, Compose health,
+live REST/MCP consistency/security and both browser smoke scripts successfully. The local
+assistant returned the six expected PostgreSQL records. See
+[Slice 17 audit](docs/SLICE_17_VALIDATION.md) for the full matrix, commands and evidence.
+
+**A17-01 historical finding:** the audit reproduced raw provider exception details in
+application logs. The subsequent follow-up replaces that logging with fixed text and
+regression-checks message, arguments and throwable for every scripted failure case.
+The original audit remains unchanged; it is not retroactively marked accepted.
+
+Hosted configuration is implemented server-side but is **not accepted**: logical
+`AI_PROVIDER=bailian`, `BAILIAN_MODEL` (delivered default `qwen3.8-max`),
+`BAILIAN_BASE_URL` (OpenAI-compatible endpoint ending `/compatible-mode/v1`) and
+`BAILIAN_API_KEY` supplied externally to the backend process. Do not put secrets in
+Angular, source or committed configuration. This describes the delivered interface only;
+it is not a direction to activate it while the hold remains. The external entitlement
+hold and missing real hosted backend/UI demonstration remain as recorded in Slice 15.
+Continue using the local command above. Phase 3 has not started.
+
+## DeepSeek hosted configuration (opt-in; acceptance pending)
+
+The `deepseek` Spring profile reuses the existing Spring AI `OpenAiChatModel`,
+CatalogAssistantService and capability path. No new provider implementation or dependency
+is added. [DeepSeek's API documentation](https://api-docs.deepseek.com/) specifies the
+OpenAI-compatible base URL `https://api.deepseek.com` and model `deepseek-flash`.
+
+| Setting | Value / source |
+| --- | --- |
+| `SPRING_PROFILES_ACTIVE` | `deepseek` |
+| `AI_PROVIDER` / `catalog.ai.provider` | `bailian` — existing legacy logical selector for the hosted client |
+| `spring.ai.openai.base-url` | `https://api.deepseek.com` from the profile |
+| `spring.ai.openai.chat.model` | `deepseek-flash` from the profile |
+| `spring.ai.openai.api-key` | Required external `DEEPSEEK_API_KEY`; no default |
+
+The legacy selector name does **not** select the network destination in this profile.
+Requests use DeepSeek; response metadata still says `provider=bailian` and
+`model=deepseek-flash`. This compatibility label is retained deliberately rather than
+changing the accepted provider selector/response behavior. `AI_PROVIDER=openai` is not
+a supported logical selector in this repository. The DeepSeek profile overrides the
+existing Bailian URL/model/key properties; no `BAILIAN_API_KEY` is needed for it.
+
+After you manually export `DEEPSEEK_API_KEY` in your shell, start with:
+
+```bash
+: "${DEEPSEEK_API_KEY:?Export DEEPSEEK_API_KEY externally before starting DeepSeek}"
+docker compose -f docker-compose.yml -f docker-compose.deepseek.yml up --build --wait --wait-timeout 300
+```
+
+The override passes the environment credential to the backend only, activates the profile
+and selects the existing hosted path. Missing/empty keys fail Compose interpolation;
+missing/blank keys fail the profile's startup guard without printing the value. There is
+no placeholder/default secret. Do not commit credentials, put them in browser assets or
+print expanded Compose configuration with credentials present. The ordinary command
+without this override retains the existing Ollama defaults. To return to local mode:
+
+```bash
+AI_PROVIDER=ollama OLLAMA_MODEL=qwen3-coder-next:latest docker compose up --build --wait --wait-timeout 300
+```
+
+For a host JVM with database configuration already supplied, use:
+
+```bash
+: "${DEEPSEEK_API_KEY:?Export DEEPSEEK_API_KEY externally before starting DeepSeek}"
+SPRING_PROFILES_ACTIVE=deepseek AI_PROVIDER=bailian mvn -f backend/pom.xml spring-boot:run
+```
+
+Startup does not call DeepSeek. A later assistant submission will transmit the prompt
+and catalog tool results to the configured hosted endpoint. Hosted acceptance remains
+incomplete until you supply the key and perform real backend/browser/tool/PostgreSQL
+validation. No real hosted call was made for this configuration work, and no DeepSeek
+acceptance is claimed. Slice 15's historical hold and Slice 16's local acceptance remain
+recorded unchanged. This is a configuration follow-up, not Phase 3.
+
+A17-01 is fixed in application-owned provider-failure logging: one fixed warning, no
+exception message, arguments or throwable. Existing scripted credential-like fixtures
+are asserted absent from those log events. This is not a claim about every third-party
+SDK or non-default debug logger. Historical Slice 17 evidence remains unchanged.

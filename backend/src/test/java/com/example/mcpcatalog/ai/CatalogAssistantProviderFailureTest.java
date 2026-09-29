@@ -12,6 +12,11 @@ import com.example.mcpcatalog.ai.config.CatalogAssistantProperties;
 import com.example.mcpcatalog.catalog.application.CatalogService;
 import com.example.mcpcatalog.mcp.tools.SearchCatalogTool;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -39,6 +44,10 @@ import static org.mockito.Mockito.verify;
  */
 class CatalogAssistantProviderFailureTest {
 
+	private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
+
+	private final Logger logger = (Logger) LoggerFactory.getLogger(CatalogAssistantService.class);
+
 	private CatalogService catalogService;
 
 	private FailingChatModel chatModel;
@@ -49,6 +58,8 @@ class CatalogAssistantProviderFailureTest {
 
 	@BeforeEach
 	void setUp() {
+		this.logs.start();
+		this.logger.addAppender(this.logs);
 		this.catalogService = mock(CatalogService.class);
 		this.chatModel = new FailingChatModel();
 		this.properties = new CatalogAssistantProperties();
@@ -56,6 +67,24 @@ class CatalogAssistantProviderFailureTest {
 		this.properties.setTimeout(Duration.ofSeconds(5));
 		this.service = new CatalogAssistantService(this.chatModel, new SearchCatalogTool(this.catalogService),
 				this.properties, "qwen-plus");
+	}
+
+	@AfterEach
+	void applicationLogsNeverContainProviderDetails() {
+		try {
+			assertThat(this.logs.list).isNotEmpty();
+			assertThat(this.logs.list).allSatisfy(event -> {
+				assertThat(event.getFormattedMessage())
+					.isEqualTo("Catalog assistant provider call failed; details suppressed");
+				assertThat(event.getThrowableProxy()).isNull();
+				assertThat(event.getArgumentArray()).isNullOrEmpty();
+			});
+		}
+		finally {
+			this.logger.detachAppender(this.logs);
+			this.logs.stop();
+			this.service.shutdown();
+		}
 	}
 
 	@Test

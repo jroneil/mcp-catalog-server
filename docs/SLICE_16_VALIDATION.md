@@ -1,8 +1,8 @@
 # Slice 16 — Natural-Language Catalog Workflow in Angular
 
-Executed 2026-09-25. **Local-only implementation and validation complete.** Hosted
-Slice 15 acceptance remains **on hold**; no hosted-provider acceptance claim is made.
-Slice 17 has not started. No commits were made.
+Executed 2026-09-25. **Slice 16: COMPLETE for local Ollama acceptance.**
+**Slice 15 hosted acceptance: ON HOLD.** **Phase 2 both-provider acceptance: OUTSTANDING.**
+**Slice 17: NOT STARTED.** No hosted-provider acceptance claim is made. No commit was made.
 
 ## Objective and governing requirements
 
@@ -11,11 +11,11 @@ catalog request through the existing assistant REST endpoint, readable grounded 
 and returned catalog items, loading and safe failure presentation. Addresses the local UI
 portion of FR-13, the FR-12 local path and FR-13A browser boundary.
 
-The user's explicit Slice 16 authorization resolves D9's local UI scenario and permits
-local-only execution while Slice 15 hosted acceptance is on hold. The plan's original
-both-provider acceptance remains an outstanding Phase 2 obligation, not a waived or
-completed requirement. No hosted calls, credentials investigation or provider changes
-were performed. Existing uncommitted Slice 15 work was preserved.
+D9 is resolved for the local Ollama UI scenario. Slice 16 does not resolve
+hosted-provider acceptance; Slice 15 hosted acceptance remains on hold. The original
+Phase 2 both-provider acceptance obligation remains outstanding. No hosted calls,
+credentials investigation or provider changes were performed. Existing uncommitted
+Slice 15 work was preserved.
 
 ## Files changed
 
@@ -146,8 +146,10 @@ the expected IDs and the independent strict-under-200 SQL result match. No front
 service semantics were changed to influence interpretation. The response's items/page
 metadata are supplied by the existing catalog capability, not synthesized in Angular.
 
-Playwright observed only frontend-origin browser requests, no `/mcp` requests and no
-browser runtime errors. Following Network Health Assessment opened the existing detail
+Playwright observed application requests only to the frontend origin, including the
+relative REST request through the existing frontend proxy. No browser request directly
+targeted `/mcp`, Ollama, or any hosted-provider endpoint, and no browser runtime errors
+occurred. Following Network Health Assessment opened the existing detail
 page; returning restored the conventional catalog. At 390 px viewport width there was
 no horizontal overflow. Desktop and mobile screenshots were captured at the `/tmp`
 paths above (local validation artifacts, not committed); response JSON is stored alongside

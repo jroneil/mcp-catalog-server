@@ -10,6 +10,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
+import org.springframework.core.env.Environment;
+import org.springframework.util.Assert;
 
 /**
  * Slice 14/15 catalog assistant wiring.
@@ -56,6 +59,18 @@ public class CatalogAssistantConfiguration {
 				CatalogAssistantProperties properties,
 				@Value("${spring.ai.openai.chat.model:unknown}") String model) {
 			return assistantService(chatModel, searchTool, properties, model);
+		}
+
+	}
+
+	/** Opt-in profile guard: reject missing/blank credentials without printing their value. */
+	@Configuration(proxyBeanMethods = false)
+	@Profile("deepseek")
+	static class DeepSeekCredentialRequirement {
+
+		DeepSeekCredentialRequirement(Environment environment) {
+			Assert.hasText(environment.getProperty("DEEPSEEK_API_KEY"),
+					"DEEPSEEK_API_KEY must be supplied externally for the deepseek profile");
 		}
 
 	}

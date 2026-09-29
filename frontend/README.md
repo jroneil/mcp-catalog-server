@@ -1,7 +1,7 @@
 # Catalog search frontend
 
 Slices 12–13 provide standalone Angular search/list and item detail over the accepted REST API.
-AI workflows remain deferred to later slices.
+Slice 16 adds a single-request local catalog assistant; hosted acceptance remains on hold.
 
 Use Node **22.22.3** and npm **10.9.8** (see `.nvmrc` and package.json engines).
 Angular core/compiler is **22.2.0**, CLI/build **22.1.8**. Install from the committed
@@ -28,7 +28,7 @@ proxied. No backend URL or credentials are embedded in application assets.
 
 ## Tests
 
-`npm test` runs 40 focused Vitest/Angular tests with Angular's HTTP test controller.
+`npm test` runs 59 focused Vitest/Angular tests with Angular's HTTP test controller.
 They cover all filters, request mapping, server-owned defaults/bounds, results,
 pagination, loading/empty/errors, retries, request cancellation, detail routing and return navigation.
 
@@ -63,3 +63,21 @@ catalog, including when a directly opened item is missing or the backend is unav
 Search filters/page and draft form edits are retained only in memory for navigation;
 records are fetched again on return, and a full reload clears this navigation snapshot.
 Optional `SMOKE_DETAIL_SCREENSHOT` / `SMOKE_DETAIL_MOBILE_SCREENSHOT` capture detail UI.
+
+## Local catalog assistant and audit status
+
+The **Ask the catalog** panel posts only `{prompt}` to relative
+`/api/v1/catalog/assistant` through the same proxy. The backend owns interpretation and
+returns the answer and catalog records; Angular displays them with loading, safe errors
+and explicit retry. It contains no provider settings, credentials or direct provider/MCP
+calls. Use the root README local Ollama startup command, then run:
+
+```bash
+CHROME_BIN=/usr/bin/google-chrome node scripts/catalog-assistant-smoke.mjs
+```
+
+The 19 assistant tests are included in the 59-test suite; `npm run smoke` still validates
+search/detail independently. Slice 16 local acceptance is complete. Slice 17 local audit
+activities are complete; hosted acceptance remains on hold and Phase 2 acceptance is
+outstanding, also blocked by server logging defect A17-01. See
+[the audit](../docs/SLICE_17_VALIDATION.md). No Phase 3 work is included.
